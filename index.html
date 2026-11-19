@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#0c1017" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Суфлёр АИС · Офлайн</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+
+  <!-- ===== SCREEN 1: SETUP / TEXT INPUT ===== -->
+  <main id="edit-screen" class="screen active">
+    <header class="setup-header">
+      <div class="brand">
+        <h1>Суфлёр АИС</h1>
+        <span class="brand-sub">Голос · Офлайн · Авиарежим</span>
+      </div>
+      <button id="theme-quick-btn" class="icon-btn" title="Сменить тему" aria-label="Сменить тему">◐</button>
+    </header>
+
+    <!-- Offline model readiness card -->
+    <section class="offline-card">
+      <div class="offline-row">
+        <div class="offline-info">
+          <span id="offline-dot" class="status-dot"></span>
+          <div>
+            <div id="offline-title" class="offline-title">Офлайн-модель речи (RU)</div>
+            <div id="offline-desc" class="offline-desc">Нажми «Скачать» по Wi-Fi перед авиарежимом (~45 МБ)</div>
+          </div>
+        </div>
+        <button id="download-model-btn" class="pill-btn">Скачать</button>
+      </div>
+      <div id="model-progress-track" class="progress-track">
+        <div id="model-progress-fill" class="progress-fill"></div>
+      </div>
+    </section>
+
+    <!-- Speech text editor -->
+    <section class="editor-card">
+      <div class="editor-meta">
+        <span id="text-stats">0 абзацев · 0 слов</span>
+        <div class="editor-tools">
+          <label class="mini-pill" style="cursor:pointer">
+            Файл .txt
+            <input id="file-input" type="file" accept=".txt,.md,text/plain" hidden />
+          </label>
+          <button id="demo-btn" class="mini-pill">Пример</button>
+          <button id="clear-btn" class="mini-pill">Очистить</button>
+        </div>
+      </div>
+      <textarea
+        id="speech-input"
+        placeholder="Вставь сюда текст выступления. Пустая строка разделяет абзацы..."
+        spellcheck="false"
+      ></textarea>
+    </section>
+
+    <div class="setup-actions">
+      <button id="start-btn" class="primary-btn">
+        <span>Открыть суфлёр</span>
+        <span>→</span>
+      </button>
+    </div>
+  </main>
+
+  <!-- ===== SCREEN 2: STAGE / READING MODE ===== -->
+  <section id="stage-screen" class="screen">
+    <div class="top-progress">
+      <div id="top-progress-fill" class="top-progress-fill"></div>
+    </div>
+
+    <div class="focus-guide" aria-hidden="true"></div>
+
+    <header class="stage-topbar">
+      <button id="back-btn" class="stage-pill" aria-label="К тексту">← Текст</button>
+
+      <div id="stage-status-pill" class="stage-pill">
+        <span id="stage-dot" class="status-dot"></span>
+        <span id="para-counter">1 / 1</span>
+      </div>
+
+      <button id="settings-btn" class="icon-btn" aria-label="Настройки" title="Настройки">⚙</button>
+    </header>
+
+    <div id="stage-scroll">
+      <article id="stage-text"></article>
+    </div>
+
+    <!-- Bottom floating dock -->
+    <footer class="stage-dock">
+      <div id="heard-strip" class="heard-strip">
+        <div class="waveform" id="waveform" aria-hidden="true">
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+        </div>
+        <span id="heard-text">Нажми на круг внизу для запуска</span>
+      </div>
+
+      <div class="dock-controls">
+        <button id="prev-para-btn" class="nav-pill" aria-label="Предыдущий абзац">‹ Абзац</button>
+
+        <div class="voice-orb-wrap">
+          <button id="voice-orb" class="voice-orb" aria-label="Старт / Пауза">🎙</button>
+        </div>
+
+        <button id="next-para-btn" class="nav-pill" aria-label="Следующий абзац">Абзац ›</button>
+      </div>
+    </footer>
+  </section>
+
+  <!-- ===== SETTINGS BOTTOM SHEET ===== -->
+  <div id="sheet-backdrop" class="sheet-backdrop"></div>
+  <aside id="settings-sheet" class="sheet" aria-label="Настройки суфлёра">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">
+      <span>Настройки</span>
+      <button id="close-sheet-btn" class="mini-pill">Готово</button>
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-label">
+        <span>Режим ведения</span>
+        <strong id="mode-label">Офлайн-голос</strong>
+      </div>
+      <div class="segmented" id="mode-segmented">
+        <button class="seg-btn active" data-mode="vosk">Офлайн</button>
+        <button class="seg-btn" data-mode="webspeech">Браузер</button>
+        <button class="seg-btn" data-mode="autoscroll">Автоскролл</button>
+      </div>
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-label">
+        <span>Размер шрифта</span>
+        <strong id="font-size-val">36 px</strong>
+      </div>
+      <input id="font-size-slider" type="range" min="22" max="68" step="2" value="36" />
+    </div>
+
+    <div class="setting-row" id="speed-row">
+      <div class="setting-label">
+        <span>Скорость автоскролла</span>
+        <strong id="speed-val">Средняя</strong>
+      </div>
+      <input id="speed-slider" type="range" min="15" max="110" step="5" value="45" />
+    </div>
+
+    <div class="toggle-grid">
+      <button id="toggle-clean" class="toggle-tile">
+        <span>Чистый экран</span><span>○</span>
+      </button>
+      <button id="toggle-heard" class="toggle-tile on">
+        <span>Слова внизу</span><span>●</span>
+      </button>
+      <button id="toggle-mirror" class="toggle-tile">
+        <span>Зеркало</span><span>○</span>
+      </button>
+      <button id="toggle-theme" class="toggle-tile">
+        <span>Светлая тема</span><span>○</span>
+      </button>
+    </div>
+
+    <button id="reset-pos-btn" class="secondary-btn" style="width:100%">↺ Вернуться в начало текста</button>
+  </aside>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="./vosk.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
