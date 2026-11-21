@@ -1,10 +1,10 @@
-const CACHE_NAME = 'suflyor-ais-v4';
+const CACHE_NAME = 'suflyor-ais-v5';
 const MODEL_CACHE = 'suflyor-ais-model-v2';
 const CORE_ASSETS = [
   './',
   './index.html',
-  './styles.css',
-  './app.js',
+  './styles.css?v=4',
+  './app.js?v=4',
   './vosk.js',
   './manifest.json',
   './icon.svg'
