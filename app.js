@@ -1,10 +1,15 @@
 (() => {
   'use strict';
 
-  const MODEL_URL = './models/vosk-model-small-ru-0.22.tar.gz';
-  const MODEL_CACHE = 'suflyor-ais-model-v1';
-  const LS_TEXT = 'suflyor_text_v1';
-  const LS_CFG = 'suflyor_cfg_v1';
+  // CRITICAL FIX: Always pass an ABSOLUTE URL to Vosk.createModel(), because vosk.js
+  // spawns a blob: Web Worker where relative "./models/..." loses the "/suflyor-ais/" subpath!
+  const ABS_MODEL_URL = new URL('./models/vosk-model-small-ru-0.22.tar.gz', window.location.href).href;
+  const MODEL_CACHE = 'suflyor-ais-model-v2';
+  const LS_TEXT = 'suflyor_text_v2';
+  const LS_CFG = 'suflyor_cfg_v2';
+  const LS_VOSK_READY = 'suflyor_vosk_ready_v2';
+
+  const STOP_WORDS = new Set(['и', 'в', 'с', 'к', 'о', 'у', 'а', 'но', 'на', 'по', 'не', 'из', 'за', 'от', 'до', 'то', 'же', 'бы']);
 
   const DEMO_TEXT = [
     'Добрый день, уважаемые коллеги и друзья!',
@@ -26,28 +31,35 @@
   const clearBtn = $('clear-btn');
   const startBtn = $('start-btn');
   const themeQuickBtn = $('theme-quick-btn');
+  const metaThemeColor = $('meta-theme-color');
 
-  const offlineDot = $('offline-dot');
-  const offlineTitle = $('offline-title');
+  const offlineStatusPill = $('offline-status-pill');
+  const offlinePct = $('offline-pct');
   const offlineDesc = $('offline-desc');
   const downloadModelBtn = $('download-model-btn');
-  const modelProgressTrack = $('model-progress-track');
   const modelProgressFill = $('model-progress-fill');
 
   const backBtn = $('back-btn');
   const settingsBtn = $('settings-btn');
-  const paraCounter = $('para-counter');
   const stageDot = $('stage-dot');
-  const topProgressFill = $('top-progress-fill');
+  const stageStatusText = $('stage-status-text');
   const stageScroll = $('stage-scroll');
   const stageText = $('stage-text');
-  const heardStrip = $('heard-strip');
-  const heardText = $('heard-text');
-  const waveBars = Array.from(document.querySelectorAll('.wave-bar'));
+
+  const waveBarsLeftEl = $('wave-bars-left');
+  const waveBarsRightEl = $('wave-bars-right');
+  const heardCaption = $('heard-caption');
+
+  const metricWpm = $('metric-wpm');
+  const metricPara = $('metric-para');
+  const metricParaTotal = $('metric-para-total');
+  const metricPct = $('metric-pct');
 
   const prevParaBtn = $('prev-para-btn');
   const nextParaBtn = $('next-para-btn');
   const voiceOrb = $('voice-orb');
+  const orbDotsSvg = $('orb-dots-svg');
+  const orbLabel = $('orb-label');
 
   const sheetBackdrop = $('sheet-backdrop');
   const settingsSheet = $('settings-sheet');
@@ -70,58 +82,105 @@
   let cfg = {
     mode: 'vosk',       // 'vosk' | 'webspeech' | 'autoscroll'
     fontSize: 36,
-    speed: 45,          // px/sec for autoscroll
+    speed: 42,
     clean: false,
     showHeard: true,
     mirror: false,
-    theme: 'dark'
+    theme: 'sage'       // 'sage' (NeuFlx light editorial + sage stage) | 'dark'
   };
 
   try {
-    const savedCfg = JSON.parse(localStorage.getItem(LS_CFG) || '{}');
-    cfg = { ...cfg, ...savedCfg };
+    const saved = JSON.parse(localStorage.getItem(LS_CFG) || '{}');
+    cfg = { ...cfg, ...saved };
   } catch (_) {}
 
   // State
-  let words = [];        // { raw, norm, paraIdx, el }
-  let paras = [];        // { el, startWordIdx, endWordIdx }
+  let words = [];       // { raw, norm, paraIdx, el }
+  let paras = [];       // { el, startWordIdx, endWordIdx }
   let curWordIdx = 0;
   let isRunning = false;
+  let wordAdvanceLog = []; // timestamps for live WPM
 
-  // Vosk state
+  // Audio & Vosk state
   let voskModel = null;
   let voskRecognizer = null;
+  let voskSampleRate = 0;
   let audioCtx = null;
   let mediaStream = null;
-  let processorNode = null;
   let sourceNode = null;
   let analyserNode = null;
+  let processorNode = null;
+  let silentGain = null;
   let waveRaf = null;
 
-  // Web Speech state
+  // Web Speech & Autoscroll state
   let webRec = null;
-
-  // Autoscroll state
   let scrollRaf = null;
   let lastFrameTs = 0;
-
-  // Wake Lock
   let wakeLock = null;
 
-  // Toast helper
+  // ===== BUILD RADIAL HALFTONE VOICE ORB SVG (NeuFlx signature) =====
+  function buildHalftoneOrb() {
+    const cx = 80;
+    const cy = 80;
+    const rings = [
+      { r: 0,  n: 1,  dot: 3.1, op: 0.95 },
+      { r: 12, n: 8,  dot: 2.8, op: 0.92 },
+      { r: 24, n: 14, dot: 2.5, op: 0.82 },
+      { r: 36, n: 20, dot: 2.1, op: 0.68 },
+      { r: 48, n: 26, dot: 1.7, op: 0.48 },
+      { r: 60, n: 32, dot: 1.3, op: 0.28 }
+    ];
+    let circles = '';
+    rings.forEach((ring, ri) => {
+      for (let i = 0; i < ring.n; i++) {
+        const angle = (i / ring.n) * Math.PI * 2 + ri * 0.22;
+        const x = (cx + Math.cos(angle) * ring.r).toFixed(1);
+        const y = (cy + Math.sin(angle) * ring.r).toFixed(1);
+        circles += `<circle cx="${x}" cy="${y}" r="${ring.dot}" fill="currentColor" opacity="${ring.op}"/>`;
+      }
+    });
+    orbDotsSvg.innerHTML = circles;
+  }
+
+  // ===== BUILD EQUALIZER WAVEFORM BARS =====
+  const leftBars = [];
+  const rightBars = [];
+  function buildWaveformBars() {
+    const patternL = [6, 10, 14, 9, 20, 26, 14, 22, 30, 18, 12, 24, 16, 28, 20, 14, 26, 18];
+    const patternR = [12, 8, 6, 10, 7, 5, 8, 6, 5, 7, 5, 4, 6, 4, 5, 4, 4, 4];
+    patternL.forEach((h) => {
+      const el = document.createElement('span');
+      el.className = 'wbar';
+      el.style.height = h + 'px';
+      el.dataset.base = String(h);
+      waveBarsLeftEl.appendChild(el);
+      leftBars.push(el);
+    });
+    patternR.forEach((h) => {
+      const el = document.createElement('span');
+      el.className = 'wbar';
+      el.style.height = h + 'px';
+      el.dataset.base = String(h);
+      waveBarsRightEl.appendChild(el);
+      rightBars.push(el);
+    });
+  }
+
+  // ===== TOAST =====
   let toastTimer = null;
   function showToast(msg) {
     toastEl.textContent = msg;
     toastEl.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2400);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2600);
   }
 
   function saveCfg() {
     try { localStorage.setItem(LS_CFG, JSON.stringify(cfg)); } catch (_) {}
   }
 
-  // ===== NORMALIZE RUSSIAN WORDS =====
+  // ===== RUSSIAN TEXT NORMALIZATION & FUZZY MATCHING =====
   function normWord(s) {
     return (s || '')
       .toLowerCase()
@@ -129,11 +188,32 @@
       .replace(/[^a-zа-я0-9]/gi, '');
   }
 
-  function wordsSimilar(a, b) {
-    if (!a || !b) return false;
-    if (a === b) return true;
-    if (a.length >= 4 && b.length >= 4) {
-      if (a.startsWith(b.slice(0, 4)) || b.startsWith(a.slice(0, 4))) return true;
+  function editDist1(a, b) {
+    if (Math.abs(a.length - b.length) > 1) return false;
+    let i = 0, j = 0, diffs = 0;
+    while (i < a.length && j < b.length) {
+      if (a[i] === b[j]) { i++; j++; }
+      else {
+        diffs++;
+        if (diffs > 1) return false;
+        if (a.length > b.length) i++;
+        else if (b.length > a.length) j++;
+        else { i++; j++; }
+      }
+    }
+    return diffs + (a.length - i) + (b.length - j) <= 1;
+  }
+
+  function wordsMatch(scriptWord, spokenWord) {
+    if (!scriptWord || !spokenWord) return false;
+    if (scriptWord === spokenWord) return true;
+    // Handle Russian inflections/endings for stems >= 4 chars
+    if (scriptWord.length >= 5 && spokenWord.length >= 5) {
+      const stemLen = Math.min(scriptWord.length, spokenWord.length) - 1;
+      if (stemLen >= 4 && scriptWord.slice(0, stemLen) === spokenWord.slice(0, stemLen)) {
+        return true;
+      }
+      if (editDist1(scriptWord, spokenWord)) return true;
     }
     return false;
   }
@@ -141,49 +221,57 @@
   // ===== APPLY SETTINGS & THEME =====
   function applyCfg() {
     document.documentElement.setAttribute('data-theme', cfg.theme);
+    metaThemeColor.setAttribute('content', cfg.theme === 'dark' ? '#0f1412' : '#f6f7f6');
     document.documentElement.style.setProperty('--font-size', cfg.fontSize + 'px');
+
     fontSizeSlider.value = cfg.fontSize;
     fontSizeVal.textContent = cfg.fontSize + ' px';
 
     speedSlider.value = cfg.speed;
-    speedVal.textContent = cfg.speed < 35 ? 'Медленно' : cfg.speed < 70 ? 'Средняя' : 'Быстро';
+    speedVal.textContent = cfg.speed < 34 ? 'Медленно' : cfg.speed < 68 ? 'Средняя' : 'Быстро';
     speedRow.style.display = cfg.mode === 'autoscroll' ? 'flex' : 'none';
 
     const modeNames = {
-      vosk: 'Офлайн-голос',
+      vosk: 'Офлайн-голос (Vosk)',
       webspeech: 'Браузер (онлайн)',
       autoscroll: 'Автоскролл'
     };
-    modeLabel.textContent = modeNames[cfg.mode] || 'Офлайн-голос';
+    modeLabel.textContent = modeNames[cfg.mode] || modeNames.vosk;
     modeSegmented.querySelectorAll('.seg-btn').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.mode === cfg.mode);
     });
 
-    stageScreen.classList.toggle('stage-screen-clean', cfg.clean);
-    heardStrip.classList.toggle('hidden', !cfg.showHeard);
+    stageScreen.classList.toggle('stage-clean', cfg.clean);
+    heardCaption.classList.toggle('hidden', !cfg.showHeard);
     stageScroll.classList.toggle('mirrored', cfg.mirror);
 
-    setTile(toggleClean, cfg.clean);
-    setTile(toggleHeard, cfg.showHeard);
-    setTile(toggleMirror, cfg.mirror);
-    setTile(toggleTheme, cfg.theme === 'light');
+    toggleClean.classList.toggle('on', cfg.clean);
+    toggleHeard.classList.toggle('on', cfg.showHeard);
+    toggleMirror.classList.toggle('on', cfg.mirror);
+    toggleTheme.classList.toggle('on', cfg.theme === 'dark');
+
+    updateOrbLabel();
   }
 
-  function setTile(el, on) {
-    el.classList.toggle('on', on);
-    el.lastElementChild.textContent = on ? '●' : '○';
+  function updateOrbLabel() {
+    if (isRunning) {
+      orbLabel.textContent = cfg.mode === 'autoscroll' ? 'Идёт прокрутка' : 'Слушаю · пауза';
+    } else {
+      orbLabel.textContent = cfg.mode === 'autoscroll' ? 'Старт прокрутки' : 'Нажми и говори';
+    }
   }
 
-  // ===== EDITOR LOGIC =====
+  // ===== EDITOR =====
   function updateEditorStats() {
     const val = speechInput.value.trim();
     if (!val) {
-      textStats.textContent = '0 абзацев · 0 слов';
+      textStats.textContent = '0 абз. · 0 слов';
       return;
     }
     const pCount = val.split(/\n\s*\n/).filter((p) => p.trim()).length;
     const wCount = val.split(/\s+/).filter(Boolean).length;
-    textStats.textContent = `${pCount} абз. · ${wCount} слов`;
+    const mins = Math.max(1, Math.round(wCount / 120));
+    textStats.textContent = `${pCount} абз. · ${wCount} слов · ~${mins} мин`;
   }
 
   speechInput.value = localStorage.getItem(LS_TEXT) || DEMO_TEXT;
@@ -198,6 +286,7 @@
     speechInput.value = DEMO_TEXT;
     try { localStorage.setItem(LS_TEXT, DEMO_TEXT); } catch (_) {}
     updateEditorStats();
+    showToast('Загружен пример выступления');
   });
 
   clearBtn.addEventListener('click', () => {
@@ -218,16 +307,18 @@
   });
 
   themeQuickBtn.addEventListener('click', () => {
-    cfg.theme = cfg.theme === 'dark' ? 'light' : 'dark';
+    cfg.theme = cfg.theme === 'dark' ? 'sage' : 'dark';
     saveCfg();
     applyCfg();
   });
 
-  // ===== BUILD STAGE PARAGRAPHS & WORDS =====
+  // ===== STAGE BUILD & HIGHLIGHT =====
   function buildStage(text) {
     stageText.innerHTML = '';
     words = [];
     paras = [];
+    wordAdvanceLog = [];
+    metricWpm.textContent = '0';
 
     const rawParas = text
       .split(/\n\s*\n/)
@@ -250,23 +341,12 @@
           span.className = 'w';
           span.textContent = tok;
           span.dataset.idx = String(wIdx);
-          span.addEventListener('click', () => {
-            jumpToWord(wIdx, true);
-          });
+          span.addEventListener('click', () => highlightWord(wIdx, true, false));
           pEl.appendChild(span);
-          if (tIdx < tokens.length - 1) {
-            pEl.appendChild(document.createTextNode(' '));
-          }
-          words.push({
-            raw: tok,
-            norm: normWord(tok),
-            paraIdx: pIdx,
-            el: span
-          });
+          if (tIdx < tokens.length - 1) pEl.appendChild(document.createTextNode(' '));
+          words.push({ raw: tok, norm: normWord(tok), paraIdx: pIdx, el: span });
         });
-        if (lIdx < lines.length - 1) {
-          pEl.appendChild(document.createElement('br'));
-        }
+        if (lIdx < lines.length - 1) pEl.appendChild(document.createElement('br'));
       });
 
       const endWordIdx = words.length - 1;
@@ -274,14 +354,28 @@
       paras.push({ el: pEl, startWordIdx, endWordIdx });
     });
 
+    metricParaTotal.textContent = `/ ${paras.length}`;
     curWordIdx = 0;
-    highlightWord(0, false);
+    highlightWord(0, false, false);
   }
 
-  function highlightWord(idx, smooth = true) {
+  function highlightWord(idx, smooth = true, trackTempo = false) {
     if (!words.length) return;
+    const prevIdx = curWordIdx;
     const clamped = Math.max(0, Math.min(idx, words.length - 1));
     curWordIdx = clamped;
+
+    if (trackTempo && clamped > prevIdx) {
+      const now = Date.now();
+      const delta = Math.min(clamped - prevIdx, 6);
+      for (let k = 0; k < delta; k++) wordAdvanceLog.push(now);
+      wordAdvanceLog = wordAdvanceLog.filter((t) => now - t <= 20000);
+      if (wordAdvanceLog.length >= 2) {
+        const spanSec = Math.max(3, (now - wordAdvanceLog[0]) / 1000);
+        const wpm = Math.round((wordAdvanceLog.length / spanSec) * 60);
+        metricWpm.textContent = String(Math.min(260, wpm));
+      }
+    }
 
     for (let i = 0; i < words.length; i++) {
       const el = words[i].el;
@@ -291,118 +385,127 @@
 
     const activeParaIdx = words[clamped].paraIdx;
     paras.forEach((p, idxP) => {
-      p.el.classList.toggle('active-para', idxP === activeParaIdx);
       p.el.classList.toggle('done-para', idxP < activeParaIdx);
     });
 
-    paraCounter.textContent = `${activeParaIdx + 1} / ${paras.length}`;
     const pct = words.length > 1 ? Math.round((clamped / (words.length - 1)) * 100) : 100;
-    topProgressFill.style.width = pct + '%';
+    metricPara.textContent = String(activeParaIdx + 1);
+    metricPct.textContent = String(pct);
 
-    // Scroll active word to ~30% from top of viewport
+    const statusPrefix = isRunning ? (cfg.mode === 'autoscroll' ? 'Автоскролл' : 'Слушаю') : 'Готов';
+    stageStatusText.textContent = `${statusPrefix} · ${activeParaIdx + 1} из ${paras.length}`;
+
+    // Scroll active word comfortably to ~28% of reading area
     const curEl = words[clamped].el;
     const containerRect = stageScroll.getBoundingClientRect();
     const elRect = curEl.getBoundingClientRect();
-    const targetTop = stageScroll.scrollTop + (elRect.top - containerRect.top) - containerRect.height * 0.30;
+    const targetTop = stageScroll.scrollTop + (elRect.top - containerRect.top) - containerRect.height * 0.28;
     stageScroll.scrollTo({
       top: Math.max(0, targetTop),
       behavior: smooth ? 'smooth' : 'auto'
     });
   }
 
-  function jumpToWord(idx, smooth = true) {
-    highlightWord(idx, smooth);
-  }
-
   function stepParagraph(delta) {
     if (!paras.length) return;
     const currentPara = words[curWordIdx] ? words[curWordIdx].paraIdx : 0;
     const targetPara = Math.max(0, Math.min(paras.length - 1, currentPara + delta));
-    jumpToWord(paras[targetPara].startWordIdx, true);
+    highlightWord(paras[targetPara].startWordIdx, true, false);
   }
 
-  // ===== MATCH SPOKEN PHRASE TO SCRIPT =====
+  // ===== MATCH SPOKEN TRANSCRIPT TO SCRIPT =====
   function matchSpoken(transcript) {
     if (!transcript || !words.length) return;
     const spoken = transcript.trim().split(/\s+/).map(normWord).filter(Boolean);
     if (!spoken.length) return;
 
     const tail = spoken.slice(-4);
-    const windowStart = Math.max(0, curWordIdx - 2);
-    const windowEnd = Math.min(words.length - 1, curWordIdx + 28);
+    const maxLookahead = Math.min(words.length - 1, curWordIdx + 22);
 
-    // Try 2-word match first for higher accuracy
+    // 1. Two consecutive words match (strongest signal, allows skipping up to 22 words)
     if (tail.length >= 2) {
       const wA = tail[tail.length - 2];
       const wB = tail[tail.length - 1];
-      for (let i = windowStart; i < windowEnd; i++) {
-        if (wordsSimilar(words[i].norm, wA) && wordsSimilar(words[i + 1].norm, wB)) {
+      for (let i = curWordIdx; i < maxLookahead; i++) {
+        if (wordsMatch(words[i].norm, wA) && wordsMatch(words[i + 1].norm, wB)) {
           if (i + 1 > curWordIdx) {
-            highlightWord(i + 1, true);
+            highlightWord(i + 1, true, true);
             return;
           }
         }
       }
     }
 
-    // Fallback: single last meaningful word (>= 3 chars, or any if short)
+    // 2. Single word match:
+    //    - Near window (+1..+3): any word
+    //    - Further window (+4..+12): only non-stop-words length >= 4
     const lastSpoken = tail[tail.length - 1];
     if (!lastSpoken) return;
-    for (let i = curWordIdx; i <= windowEnd; i++) {
-      if (wordsSimilar(words[i].norm, lastSpoken)) {
-        if (i > curWordIdx) {
-          highlightWord(i, true);
-          return;
-        }
+    const isMeaningful = lastSpoken.length >= 4 && !STOP_WORDS.has(lastSpoken);
+    const singleLimit = Math.min(words.length - 1, curWordIdx + (isMeaningful ? 12 : 3));
+
+    for (let i = curWordIdx + 1; i <= singleLimit; i++) {
+      if (wordsMatch(words[i].norm, lastSpoken)) {
+        highlightWord(i, true, true);
+        return;
       }
     }
   }
 
-  // ===== OFFLINE MODEL DOWNLOAD & CACHE =====
-  async function checkModelCached() {
-    if (!('caches' in window)) return false;
-    try {
-      const cache = await caches.open(MODEL_CACHE);
-      const match = await cache.match(MODEL_URL);
-      return Boolean(match);
-    } catch (_) {
-      return false;
+  // ===== OFFLINE MODEL DOWNLOAD + REAL IDBFS UNPACK =====
+  function setHeroProgress(pct, pillText, descText, isReady = false) {
+    offlinePct.textContent = `${pct}%`;
+    modelProgressFill.style.width = `${pct}%`;
+    offlineStatusPill.textContent = pillText;
+    offlineStatusPill.classList.toggle('ready', isReady);
+    offlineDesc.textContent = descText;
+  }
+
+  async function initVoskModel() {
+    if (voskModel && voskModel.ready) return voskModel;
+    if (typeof Vosk === 'undefined') {
+      throw new Error('Библиотека vosk.js не загружена');
     }
+    voskModel = await Vosk.createModel(ABS_MODEL_URL);
+    if (!voskModel || !voskModel.ready) {
+      throw new Error('Модель Vosk не перешла в состояние ready');
+    }
+    try { localStorage.setItem(LS_VOSK_READY, ABS_MODEL_URL); } catch (_) {}
+    return voskModel;
   }
 
   async function refreshModelBadge() {
-    const cached = await checkModelCached();
-    if (cached) {
-      offlineDot.className = 'status-dot ready';
-      offlineTitle.textContent = 'Модель готова к авиарежиму';
-      offlineDesc.textContent = 'Русская речь сохранена в памяти телефона';
-      downloadModelBtn.textContent = 'Готово ✓';
+    const unpacked = localStorage.getItem(LS_VOSK_READY) === ABS_MODEL_URL;
+    if (unpacked) {
+      setHeroProgress(
+        100,
+        'Готово к авиарежиму',
+        'Русская модель распакована в память телефона — работает полностью без интернета.',
+        true
+      );
+      downloadModelBtn.innerHTML = '<span>Готово ✓</span>';
       downloadModelBtn.disabled = true;
     } else {
-      offlineDot.className = 'status-dot';
-      offlineTitle.textContent = 'Офлайн-модель речи (RU)';
-      offlineDesc.textContent = 'Нажми «Скачать» по Wi-Fi перед авиарежимом (~45 МБ)';
-      downloadModelBtn.textContent = 'Скачать';
+      setHeroProgress(
+        0,
+        'Не загружен',
+        'Нажми по Wi-Fi один раз — скачает и распакует русскую модель (~44 МБ) в память телефона.',
+        false
+      );
       downloadModelBtn.disabled = false;
     }
   }
 
-  async function downloadModelToCache() {
-    if (!('caches' in window)) {
-      showToast('Кеширование недоступно в этом браузере');
-      return false;
-    }
+  async function prepareOfflineModel() {
     downloadModelBtn.disabled = true;
-    downloadModelBtn.textContent = 'Качаю…';
-    offlineDot.className = 'status-dot loading';
-    modelProgressTrack.classList.add('visible');
-    modelProgressFill.style.width = '5%';
+    downloadModelBtn.innerHTML = '<span>Загрузка…</span>';
+    setHeroProgress(4, 'Скачивание…', 'Загружаю архив русской модели речи (44 МБ)…', false);
 
     try {
-      const resp = await fetch(MODEL_URL);
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-
-      const total = Number(resp.headers.get('content-length')) || 45000000;
+      // Step 1: Stream download with real progress into Cache API
+      const resp = await fetch(ABS_MODEL_URL);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const total = Number(resp.headers.get('content-length')) || 45500000;
       const reader = resp.body.getReader();
       const chunks = [];
       let received = 0;
@@ -412,40 +515,54 @@
         if (done) break;
         chunks.push(value);
         received += value.length;
-        const pct = Math.min(99, Math.round((received / total) * 100));
-        modelProgressFill.style.width = pct + '%';
-        offlineDesc.textContent = `Загружено ${Math.round(received / 1048576)} МБ (${pct}%)`;
+        const pct = Math.min(80, Math.max(5, Math.round((received / total) * 80)));
+        const mb = (received / 1048576).toFixed(1);
+        setHeroProgress(pct, `${mb} МБ`, 'Сохраняю модель в локальный кеш…', false);
       }
 
-      const blob = new Blob(chunks, { type: 'application/gzip' });
-      const cache = await caches.open(MODEL_CACHE);
-      await cache.put(MODEL_URL, new Response(blob, {
-        headers: { 'Content-Type': 'application/gzip', 'Content-Length': String(blob.size) }
-      }));
+      if ('caches' in window) {
+        const blob = new Blob(chunks, { type: 'application/gzip' });
+        const cache = await caches.open(MODEL_CACHE);
+        await cache.put(ABS_MODEL_URL, new Response(blob, {
+          headers: { 'Content-Type': 'application/gzip', 'Content-Length': String(blob.size) }
+        }));
+      }
 
-      modelProgressFill.style.width = '100%';
-      setTimeout(() => modelProgressTrack.classList.remove('visible'), 700);
+      // Step 2: Actually unpack into Vosk's persistent IDBFS right now while online!
+      setHeroProgress(88, 'Распаковка…', 'Распаковываю модель в IndexedDB для мгновенного запуска в авиарежиме…', false);
+      await initVoskModel();
+
       await refreshModelBadge();
-      showToast('Модель сохранена для авиарежима');
+      showToast('Офлайн-модель готова к авиарежиму');
       return true;
     } catch (err) {
-      offlineDot.className = 'status-dot error';
-      offlineDesc.textContent = 'Не удалось скачать. Проверь интернет и повтори.';
-      downloadModelBtn.textContent = 'Повторить';
+      const msg = (err && err.message) ? err.message : 'Сбой загрузки';
+      setHeroProgress(0, 'Ошибка', `Не удалось подготовить модель: ${msg}`, false);
+      downloadModelBtn.innerHTML = '<span>Повторить</span>';
       downloadModelBtn.disabled = false;
-      modelProgressTrack.classList.remove('visible');
+      showToast('Ошибка: ' + msg);
       return false;
     }
   }
 
-  downloadModelBtn.addEventListener('click', downloadModelToCache);
+  downloadModelBtn.addEventListener('click', prepareOfflineModel);
+
+  // Expose tiny verification hook for automated health check
+  window.__suflyorDebug = {
+    absModelUrl: ABS_MODEL_URL,
+    initVoskModel,
+    getState: () => ({
+      curWordIdx,
+      wordsCount: words.length,
+      parasCount: paras.length,
+      voskReady: Boolean(voskModel && voskModel.ready)
+    })
+  };
 
   // ===== WAKE LOCK =====
   async function requestWakeLock() {
     if (!('wakeLock' in navigator)) return;
-    try {
-      wakeLock = await navigator.wakeLock.request('screen');
-    } catch (_) {}
+    try { wakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}
   }
 
   function releaseWakeLock() {
@@ -455,17 +572,29 @@
     }
   }
 
-  // ===== WAVEFORM ANIMATION =====
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && isRunning) requestWakeLock();
+  });
+
+  // ===== LIVE EQUALIZER WAVEFORM =====
   function startWaveLoop() {
     if (!analyserNode) return;
     const data = new Uint8Array(analyserNode.frequencyBinCount);
     const draw = () => {
       if (!isRunning || !analyserNode) return;
       analyserNode.getByteFrequencyData(data);
-      const step = Math.floor(data.length / waveBars.length);
-      waveBars.forEach((bar, i) => {
-        const v = data[i * step] || 0;
-        const h = Math.max(4, Math.min(18, 4 + (v / 255) * 16));
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) sum += data[i];
+      const level = sum / data.length / 255;
+
+      leftBars.forEach((bar, i) => {
+        const v = data[(i * 2) % data.length] || 0;
+        const h = Math.max(4, Math.min(34, 5 + (v / 255) * 30));
+        bar.style.height = h + 'px';
+      });
+      rightBars.forEach((bar, i) => {
+        const base = Number(bar.dataset.base);
+        const h = Math.max(4, Math.min(18, base + level * 8));
         bar.style.height = h + 'px';
       });
       waveRaf = requestAnimationFrame(draw);
@@ -475,66 +604,62 @@
 
   function resetWave() {
     cancelAnimationFrame(waveRaf);
-    waveBars.forEach((b) => { b.style.height = '4px'; });
+    leftBars.forEach((b) => { b.style.height = b.dataset.base + 'px'; });
+    rightBars.forEach((b) => { b.style.height = b.dataset.base + 'px'; });
   }
 
-  // ===== START / STOP ENGINE =====
+  // ===== VOICE / SCROLL ENGINES =====
   async function startVosk() {
-    if (typeof Vosk === 'undefined') {
-      throw new Error('Библиотека vosk.js не загрузилась');
-    }
     stageDot.className = 'status-dot loading';
-    heardText.textContent = 'Загружаю офлайн-модель…';
+    heardCaption.textContent = 'Инициализирую офлайн-модель речи…';
 
-    // Ensure cached if online
-    const cached = await checkModelCached();
-    if (!cached && navigator.onLine) {
-      await downloadModelToCache();
+    // Create AudioContext INSIDE user gesture first (critical for iOS Safari / Android Chrome!)
+    const AC = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AC();
+    if (audioCtx.state === 'suspended') {
+      await audioCtx.resume();
     }
+    const actualSampleRate = audioCtx.sampleRate;
 
-    if (!voskModel) {
-      voskModel = await Vosk.createModel(MODEL_URL);
-    }
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1
+      },
+      video: false
+    });
 
-    if (!voskRecognizer) {
-      voskRecognizer = new voskModel.KaldiRecognizer(16000);
+    await initVoskModel();
+
+    if (!voskRecognizer || voskSampleRate !== actualSampleRate) {
+      if (voskRecognizer) {
+        try { voskRecognizer.remove(); } catch (_) {}
+      }
+      voskSampleRate = actualSampleRate;
+      voskRecognizer = new voskModel.KaldiRecognizer(actualSampleRate);
       voskRecognizer.setWords(true);
       voskRecognizer.on('partialresult', (msg) => {
         const p = msg && msg.result && msg.result.partial;
         if (p) {
-          heardText.textContent = p;
+          heardCaption.textContent = `«${p}»`;
           matchSpoken(p);
         }
       });
       voskRecognizer.on('result', (msg) => {
         const t = msg && msg.result && msg.result.text;
         if (t) {
-          heardText.textContent = t;
+          heardCaption.textContent = `«${t}»`;
           matchSpoken(t);
         }
       });
     }
 
-    mediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        channelCount: 1
-      },
-      video: false
-    });
-
-    const AC = window.AudioContext || window.webkitAudioContext;
-    audioCtx = new AC({ sampleRate: 16000 });
-    if (audioCtx.state === 'suspended') {
-      await audioCtx.resume();
-    }
-
     sourceNode = audioCtx.createMediaStreamSource(mediaStream);
     analyserNode = audioCtx.createAnalyser();
-    analyserNode.fftSize = 64;
+    analyserNode.fftSize = 128;
 
-    // ScriptProcessor is still the broadest mobile-compatible PCM tap (iOS Safari + Android Chrome)
     processorNode = audioCtx.createScriptProcessor(4096, 1, 1);
     processorNode.onaudioprocess = (ev) => {
       if (!isRunning || !voskRecognizer) return;
@@ -543,20 +668,25 @@
       } catch (_) {}
     };
 
+    // Route through silent GainNode(0) so onaudioprocess ALWAYS fires with ZERO speaker feedback!
+    silentGain = audioCtx.createGain();
+    silentGain.gain.value = 0;
+
     sourceNode.connect(analyserNode);
     sourceNode.connect(processorNode);
-    processorNode.connect(audioCtx.destination);
+    processorNode.connect(silentGain);
+    silentGain.connect(audioCtx.destination);
 
     startWaveLoop();
     stageDot.className = 'status-dot listening';
-    heardText.textContent = 'Слушаю (офлайн)… говорите';
+    const activeParaIdx = words[curWordIdx] ? words[curWordIdx].paraIdx : 0;
+    stageStatusText.textContent = `Слушаю · ${activeParaIdx + 1} из ${paras.length}`;
+    heardCaption.textContent = 'Слушаю офлайн — начинай говорить';
   }
 
   function startWebSpeech() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      throw new Error('Браузерное распознавание здесь не поддерживается');
-    }
+    if (!SR) throw new Error('Онлайн-распознавание не поддерживается этим браузером');
     webRec = new SR();
     webRec.lang = 'ru-RU';
     webRec.continuous = true;
@@ -569,7 +699,7 @@
       }
       text = text.trim();
       if (text) {
-        heardText.textContent = text;
+        heardCaption.textContent = `«${text}»`;
         matchSpoken(text);
       }
     };
@@ -589,12 +719,16 @@
 
     webRec.start();
     stageDot.className = 'status-dot listening';
-    heardText.textContent = 'Слушаю (браузер)… говорите';
+    const activeParaIdx = words[curWordIdx] ? words[curWordIdx].paraIdx : 0;
+    stageStatusText.textContent = `Слушаю · ${activeParaIdx + 1} из ${paras.length}`;
+    heardCaption.textContent = 'Слушаю через браузер — начинай говорить';
   }
 
   function startAutoscroll() {
     stageDot.className = 'status-dot ready';
-    heardText.textContent = 'Автоскролл включён · тап по кругу = пауза';
+    const activeParaIdx = words[curWordIdx] ? words[curWordIdx].paraIdx : 0;
+    stageStatusText.textContent = `Автоскролл · ${activeParaIdx + 1} из ${paras.length}`;
+    heardCaption.textContent = 'Плавная прокрутка · нажми на сферу для паузы';
     lastFrameTs = performance.now();
 
     const step = (ts) => {
@@ -612,24 +746,18 @@
     isRunning = true;
     voiceOrb.classList.toggle('listening', cfg.mode !== 'autoscroll');
     voiceOrb.classList.toggle('autoscroll', cfg.mode === 'autoscroll');
-    voiceOrb.textContent = '⏸';
+    updateOrbLabel();
     await requestWakeLock();
 
     try {
-      if (cfg.mode === 'vosk') {
-        await startVosk();
-      } else if (cfg.mode === 'webspeech') {
-        startWebSpeech();
-      } else {
-        startAutoscroll();
-      }
+      if (cfg.mode === 'vosk') await startVosk();
+      else if (cfg.mode === 'webspeech') startWebSpeech();
+      else startAutoscroll();
     } catch (err) {
-      isRunning = false;
-      voiceOrb.classList.remove('listening', 'autoscroll');
-      voiceOrb.textContent = '🎙';
+      stopEngine();
       stageDot.className = 'status-dot error';
-      const msg = (err && err.message) ? err.message : 'Ошибка микрофона';
-      heardText.textContent = msg + ' — используй свайп или Автоскролл';
+      const msg = (err && err.message) ? err.message : 'Нет доступа к микрофону';
+      heardCaption.textContent = `${msg} — используй свайп или Автоскролл`;
       showToast(msg);
     }
   }
@@ -637,9 +765,12 @@
   function stopEngine() {
     isRunning = false;
     voiceOrb.classList.remove('listening', 'autoscroll');
-    voiceOrb.textContent = cfg.mode === 'autoscroll' ? '▶' : '🎙';
     stageDot.className = 'status-dot';
-    heardText.textContent = 'Пауза · свайпай или нажми на круг';
+    updateOrbLabel();
+
+    const activeParaIdx = words[curWordIdx] ? words[curWordIdx].paraIdx : 0;
+    stageStatusText.textContent = `Пауза · ${activeParaIdx + 1} из ${paras.length}`;
+    heardCaption.textContent = 'Пауза · свайпай абзацы или нажми на сферу';
 
     cancelAnimationFrame(scrollRaf);
     resetWave();
@@ -649,19 +780,11 @@
       try { webRec.onend = null; webRec.stop(); } catch (_) {}
       webRec = null;
     }
+    [processorNode, silentGain, analyserNode, sourceNode].forEach((n) => {
+      if (n) { try { n.disconnect(); } catch (_) {} }
+    });
+    processorNode = silentGain = analyserNode = sourceNode = null;
 
-    if (processorNode) {
-      try { processorNode.disconnect(); } catch (_) {}
-      processorNode = null;
-    }
-    if (sourceNode) {
-      try { sourceNode.disconnect(); } catch (_) {}
-      sourceNode = null;
-    }
-    if (analyserNode) {
-      try { analyserNode.disconnect(); } catch (_) {}
-      analyserNode = null;
-    }
     if (audioCtx) {
       try { audioCtx.close(); } catch (_) {}
       audioCtx = null;
@@ -688,7 +811,6 @@
     buildStage(text);
     editScreen.classList.remove('active');
     stageScreen.classList.add('active');
-    voiceOrb.textContent = cfg.mode === 'autoscroll' ? '▶' : '🎙';
   });
 
   backBtn.addEventListener('click', () => {
@@ -713,13 +835,12 @@
     if (!e.changedTouches.length) return;
     const dx = e.changedTouches[0].clientX - touchStartX;
     const dy = e.changedTouches[0].clientY - touchStartY;
-    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.35) {
       if (dx < 0) stepParagraph(1);
       else stepParagraph(-1);
     }
   }, { passive: true });
 
-  // Keyboard support for quick testing on Mac
   document.addEventListener('keydown', (e) => {
     if (!stageScreen.classList.contains('active')) return;
     if (e.key === 'ArrowRight' || e.key === 'PageDown') stepParagraph(1);
@@ -730,7 +851,7 @@
     }
   });
 
-  // ===== SETTINGS BOTTOM SHEET =====
+  // ===== SETTINGS SHEET =====
   function openSheet() {
     sheetBackdrop.classList.add('open');
     settingsSheet.classList.add('open');
@@ -753,7 +874,6 @@
     cfg.mode = btn.dataset.mode;
     saveCfg();
     applyCfg();
-    voiceOrb.textContent = cfg.mode === 'autoscroll' ? '▶' : '🎙';
     if (wasRunning) startEngine();
   });
 
@@ -769,36 +889,23 @@
     applyCfg();
   });
 
-  toggleClean.addEventListener('click', () => {
-    cfg.clean = !cfg.clean;
-    saveCfg();
-    applyCfg();
-  });
-
-  toggleHeard.addEventListener('click', () => {
-    cfg.showHeard = !cfg.showHeard;
-    saveCfg();
-    applyCfg();
-  });
-
-  toggleMirror.addEventListener('click', () => {
-    cfg.mirror = !cfg.mirror;
-    saveCfg();
-    applyCfg();
-  });
-
+  toggleClean.addEventListener('click', () => { cfg.clean = !cfg.clean; saveCfg(); applyCfg(); });
+  toggleHeard.addEventListener('click', () => { cfg.showHeard = !cfg.showHeard; saveCfg(); applyCfg(); });
+  toggleMirror.addEventListener('click', () => { cfg.mirror = !cfg.mirror; saveCfg(); applyCfg(); });
   toggleTheme.addEventListener('click', () => {
-    cfg.theme = cfg.theme === 'dark' ? 'light' : 'dark';
+    cfg.theme = cfg.theme === 'dark' ? 'sage' : 'dark';
     saveCfg();
     applyCfg();
   });
 
   resetPosBtn.addEventListener('click', () => {
-    jumpToWord(0, true);
+    highlightWord(0, true, false);
     closeSheet();
   });
 
   // ===== INIT =====
+  buildHalftoneOrb();
+  buildWaveformBars();
   applyCfg();
   refreshModelBadge();
 

@@ -1,5 +1,5 @@
-const CACHE_NAME = 'suflyor-ais-v1';
-const MODEL_CACHE = 'suflyor-ais-model-v1';
+const CACHE_NAME = 'suflyor-ais-v2';
+const MODEL_CACHE = 'suflyor-ais-model-v2';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -31,10 +31,9 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
   if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
 
-  // Serve cached Vosk model offline first
   if (url.pathname.includes('/models/')) {
     event.respondWith(
       caches.open(MODEL_CACHE).then((cache) =>
@@ -50,7 +49,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-first for app shell so Airplane Mode always loads instantly
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
