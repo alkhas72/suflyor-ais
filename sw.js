@@ -1,4 +1,4 @@
-const CACHE_NAME = 'suflyor-ais-v2';
+const CACHE_NAME = 'suflyor-ais-v3';
 const MODEL_CACHE = 'suflyor-ais-model-v2';
 const CORE_ASSETS = [
   './',
@@ -34,6 +34,7 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
 
+  // Heavy speech model: cache-first
   if (url.pathname.includes('/models/')) {
     event.respondWith(
       caches.open(MODEL_CACHE).then((cache) =>
@@ -49,16 +50,19 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((resp) => {
-        if (resp.ok && url.origin === self.location.origin) {
-          const clone = resp.clone();
-          caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
-        }
-        return resp;
-      });
-    })
-  );
+  // App shell (HTML/CSS/JS): network-first so updates appear immediately online,
+  // falling back to cache in Airplane Mode
+  if (url.origin === self.location.origin) {
+    event.respondWith(
+      fetch(event.request)
+        .then((resp) => {
+          if (resp.ok) {
+            const clone = resp.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
+          }
+          return resp;
+        })
+        .catch(() => caches.match(event.request))
+    );
+  }
 });
