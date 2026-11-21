@@ -1,21 +1,21 @@
 (() => {
   'use strict';
 
-  // CRITICAL FIX: Always pass an ABSOLUTE URL to Vosk.createModel(), because vosk.js
-  // spawns a blob: Web Worker where relative "./models/..." loses the "/suflyor-ais/" subpath!
   const ABS_MODEL_URL = new URL('./models/vosk-model-small-ru-0.22.tar.gz', window.location.href).href;
   const MODEL_CACHE = 'suflyor-ais-model-v2';
-  const LS_TEXT = 'suflyor_text_v2';
-  const LS_CFG = 'suflyor_cfg_v2';
+  const LS_TEXT = 'suflyor_text_v3';
+  const LS_CFG = 'suflyor_cfg_v3';
   const LS_VOSK_READY = 'suflyor_vosk_ready_v2';
 
   const STOP_WORDS = new Set(['и', 'в', 'с', 'к', 'о', 'у', 'а', 'но', 'на', 'по', 'не', 'из', 'за', 'от', 'до', 'то', 'же', 'бы']);
+  const MOODS = ['sage', 'orchid', 'lime', 'night'];
+  const MOOD_NAMES = { sage: 'Мята', orchid: 'Орхидея', lime: 'Лайм', night: 'Ночь' };
 
   const DEMO_TEXT = [
     'Добрый день, уважаемые коллеги и друзья!',
-    'Сегодня мы говорим о том, как технологии помогают людям с инвалидностью жить свободно и самостоятельно.',
+    'Сегодня мы говорим о том, как технологии помогают людям жить свободно и самостоятельно.',
     'Наш главный принцип прост: сначала реальная потребность человека, и только потом — код и алгоритмы.',
-    'Когда связь пропадает или телефон в авиарежиме, инструменты должны продолжать работать надёжно и без сбоев.',
+    'Когда связь пропадает или телефон в авиарежиме, суфлёр продолжает работать легко и без сбоев.',
     'Спасибо за внимание! Буду рад ответить на ваши вопросы.'
   ].join('\n\n');
 
@@ -30,40 +30,54 @@
   const demoBtn = $('demo-btn');
   const clearBtn = $('clear-btn');
   const startBtn = $('start-btn');
-  const themeQuickBtn = $('theme-quick-btn');
-  const metaThemeColor = $('meta-theme-color');
+  const moodCycleBtn = $('mood-cycle-btn');
+  const activityBarsEl = $('activity-bars');
+
+  const desktopMoodPills = $('desktop-mood-pills');
+  const toggleShellBtn = $('toggle-shell-btn');
+  const phoneChrome = document.querySelector('.phone-chrome');
+  const dynamicIsland = document.querySelector('.dynamic-island');
+  const chromeTime = $('chrome-time');
 
   const offlineStatusPill = $('offline-status-pill');
   const offlinePct = $('offline-pct');
   const offlineDesc = $('offline-desc');
   const downloadModelBtn = $('download-model-btn');
   const modelProgressFill = $('model-progress-fill');
+  const capTextFill = $('cap-text-fill');
+  const capReadyFill = $('cap-ready-fill');
 
   const backBtn = $('back-btn');
   const settingsBtn = $('settings-btn');
+  const stageStatusPill = $('stage-status-pill');
   const stageDot = $('stage-dot');
   const stageStatusText = $('stage-status-text');
   const stageScroll = $('stage-scroll');
   const stageText = $('stage-text');
+  const glowA = $('glow-a');
+  const glowB = $('glow-b');
 
   const waveBarsLeftEl = $('wave-bars-left');
-  const waveBarsRightEl = $('wave-bars-right');
   const heardCaption = $('heard-caption');
 
   const metricWpm = $('metric-wpm');
   const metricPara = $('metric-para');
   const metricParaTotal = $('metric-para-total');
   const metricPct = $('metric-pct');
+  const tilePara = $('tile-para');
+  const tilePct = $('tile-pct');
 
   const prevParaBtn = $('prev-para-btn');
   const nextParaBtn = $('next-para-btn');
   const voiceOrb = $('voice-orb');
-  const orbDotsSvg = $('orb-dots-svg');
+  const domeCanvas = $('dome-canvas');
   const orbLabel = $('orb-label');
 
   const sheetBackdrop = $('sheet-backdrop');
   const settingsSheet = $('settings-sheet');
   const closeSheetBtn = $('close-sheet-btn');
+  const sheetMoodRow = $('sheet-mood-row');
+  const moodName = $('mood-name');
   const modeSegmented = $('mode-segmented');
   const modeLabel = $('mode-label');
   const fontSizeSlider = $('font-size-slider');
@@ -74,19 +88,19 @@
   const toggleClean = $('toggle-clean');
   const toggleHeard = $('toggle-heard');
   const toggleMirror = $('toggle-mirror');
-  const toggleTheme = $('toggle-theme');
   const resetPosBtn = $('reset-pos-btn');
   const toastEl = $('toast');
 
   // Config
   let cfg = {
-    mode: 'vosk',       // 'vosk' | 'webspeech' | 'autoscroll'
-    fontSize: 36,
+    mood: 'sage',
+    shell: 'phone',
+    mode: 'vosk',
+    fontSize: 34,
     speed: 42,
     clean: false,
     showHeard: true,
-    mirror: false,
-    theme: 'sage'       // 'sage' (NeuFlx light editorial + sage stage) | 'dark'
+    mirror: false
   };
 
   try {
@@ -95,11 +109,12 @@
   } catch (_) {}
 
   // State
-  let words = [];       // { raw, norm, paraIdx, el }
-  let paras = [];       // { el, startWordIdx, endWordIdx }
+  let words = [];
+  let paras = [];
   let curWordIdx = 0;
   let isRunning = false;
-  let wordAdvanceLog = []; // timestamps for live WPM
+  let wordAdvanceLog = [];
+  let liveVoiceLevel = 0;
 
   // Audio & Vosk state
   let voskModel = null;
@@ -111,81 +126,161 @@
   let analyserNode = null;
   let processorNode = null;
   let silentGain = null;
-  let waveRaf = null;
 
-  // Web Speech & Autoscroll state
   let webRec = null;
   let scrollRaf = null;
   let lastFrameTs = 0;
   let wakeLock = null;
 
-  // ===== BUILD RADIAL HALFTONE VOICE ORB SVG (NeuFlx signature) =====
-  function buildHalftoneOrb() {
-    const cx = 80;
-    const cy = 80;
-    const rings = [
-      { r: 0,  n: 1,  dot: 3.1, op: 0.95 },
-      { r: 12, n: 8,  dot: 2.8, op: 0.92 },
-      { r: 24, n: 14, dot: 2.5, op: 0.82 },
-      { r: 36, n: 20, dot: 2.1, op: 0.68 },
-      { r: 48, n: 26, dot: 1.7, op: 0.48 },
-      { r: 60, n: 32, dot: 1.3, op: 0.28 }
-    ];
-    let circles = '';
-    rings.forEach((ring, ri) => {
-      for (let i = 0; i < ring.n; i++) {
-        const angle = (i / ring.n) * Math.PI * 2 + ri * 0.22;
-        const x = (cx + Math.cos(angle) * ring.r).toFixed(1);
-        const y = (cy + Math.sin(angle) * ring.r).toFixed(1);
-        circles += `<circle cx="${x}" cy="${y}" r="${ring.dot}" fill="currentColor" opacity="${ring.op}"/>`;
-      }
+  // ===== LIVE CLOCK IN PHONE CHROME =====
+  function updateClock() {
+    if (!chromeTime) return;
+    const d = new Date();
+    chromeTime.textContent = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+  updateClock();
+  setInterval(updateClock, 30000);
+
+  // ===== PLAYFUL COLORED ACTIVITY MINI-BARS ON SETUP SCREEN =====
+  const actBars = [];
+  const actColors = ['#eaf372', '#e88cc8', '#8ec0a1', '#eaf372', '#e88cc8', '#8ec0a1', '#8ec0a1', '#e88cc8', '#eaf372', '#8ec0a1', '#e88cc8', '#eaf372', '#8ec0a1', '#e88cc8', '#eaf372', '#8ec0a1'];
+  function buildActivityBars() {
+    actColors.forEach((color, idx) => {
+      const el = document.createElement('span');
+      el.className = 'act-bar';
+      el.style.background = color;
+      el.style.height = (8 + ((idx * 7) % 16)) + 'px';
+      activityBarsEl.appendChild(el);
+      actBars.push(el);
     });
-    orbDotsSvg.innerHTML = circles;
   }
 
-  // ===== BUILD EQUALIZER WAVEFORM BARS =====
+  function danceActivityBars(seed) {
+    actBars.forEach((bar, idx) => {
+      const h = 6 + Math.abs(Math.sin(seed * 0.35 + idx * 0.7)) * 19;
+      bar.style.height = Math.round(h) + 'px';
+    });
+  }
+
+  // ===== HIGH-CONTRAST NEUFLX WAVEFORM BARS =====
   const leftBars = [];
-  const rightBars = [];
+  const waveBaseHeights = [10, 18, 12, 34, 54, 24, 16, 46, 26, 62, 34, 42, 22, 52, 28, 16, 38, 22, 48, 30, 18, 36, 24, 14];
   function buildWaveformBars() {
-    const patternL = [6, 10, 14, 9, 20, 26, 14, 22, 30, 18, 12, 24, 16, 28, 20, 14, 26, 18];
-    const patternR = [12, 8, 6, 10, 7, 5, 8, 6, 5, 7, 5, 4, 6, 4, 5, 4, 4, 4];
-    patternL.forEach((h) => {
+    waveBaseHeights.forEach((h) => {
       const el = document.createElement('span');
       el.className = 'wbar';
       el.style.height = h + 'px';
-      el.dataset.base = String(h);
       waveBarsLeftEl.appendChild(el);
       leftBars.push(el);
     });
-    patternR.forEach((h) => {
-      const el = document.createElement('span');
-      el.className = 'wbar';
-      el.style.height = h + 'px';
-      el.dataset.base = String(h);
-      waveBarsRightEl.appendChild(el);
-      rightBars.push(el);
-    });
   }
 
-  // ===== TOAST =====
+  // ===== LIVING CANVAS HALFTONE DOME + AMBIENT ANIMATION LOOP =====
+  const domeCtx = domeCanvas.getContext('2d');
+  let animPhase = 0;
+
+  function renderLivingStage() {
+    animPhase += isRunning ? 0.055 : 0.02;
+
+    // Smoothly decay or sample microphone amplitude
+    let targetLevel = 0;
+    if (isRunning && analyserNode) {
+      const freq = new Uint8Array(analyserNode.frequencyBinCount);
+      analyserNode.getByteFrequencyData(freq);
+      let sum = 0;
+      for (let i = 0; i < freq.length; i++) sum += freq[i];
+      targetLevel = Math.min(1, (sum / freq.length) / 95);
+
+      leftBars.forEach((bar, i) => {
+        const v = freq[(i * 2) % freq.length] || 0;
+        const h = Math.max(6, Math.min(68, 8 + (v / 255) * 62));
+        bar.style.height = h.toFixed(0) + 'px';
+      });
+    } else if (isRunning && cfg.mode === 'autoscroll') {
+      targetLevel = 0.25 + 0.12 * Math.sin(animPhase * 1.4);
+      leftBars.forEach((bar, i) => {
+        const base = waveBaseHeights[i];
+        const h = Math.max(6, base * (0.65 + 0.35 * Math.sin(animPhase * 1.5 + i * 0.45)));
+        bar.style.height = h.toFixed(0) + 'px';
+      });
+    } else {
+      // Gentle playful idle breathing on waveform
+      leftBars.forEach((bar, i) => {
+        const base = waveBaseHeights[i];
+        const h = Math.max(5, base * (0.72 + 0.22 * Math.sin(animPhase + i * 0.4)));
+        bar.style.height = h.toFixed(0) + 'px';
+      });
+    }
+
+    liveVoiceLevel += (targetLevel - liveVoiceLevel) * 0.22;
+
+    // Ambient blobs gently pulse with voice
+    if (glowA && glowB) {
+      const s = 1 + liveVoiceLevel * 0.28;
+      glowA.style.transform = `scale(${s.toFixed(3)})`;
+      glowB.style.transform = `scale(${(1 + liveVoiceLevel * 0.34).toFixed(3)})`;
+    }
+
+    // Draw NeuFlx Diagonal Halftone Shimmer on Rising Dome
+    const w = domeCanvas.width;
+    const h = domeCanvas.height;
+    domeCtx.clearRect(0, 0, w, h);
+
+    const cx = w / 2;
+    const cy = h + 74;
+    const maxR = 196;
+    const step = 9.5;
+    const dotColor = cfg.mood === 'night' ? '234, 243, 114' : '255, 255, 255';
+
+    for (let y = 16; y < h - 6; y += step) {
+      for (let x = 20; x < w - 20; x += step) {
+        const dx = x - cx;
+        const dy = y - cy;
+        const dist = Math.hypot(dx, dy);
+        if (dist > maxR || dist < 96) continue;
+
+        // Concentrate shimmer on the upper-right arc just like NeuFlx!
+        const rightBias = Math.max(0, (dx + 75) / 190);
+        const edgeFade = 1 - Math.abs(dist - 156) / 56;
+        const waveRipple = 0.5 + 0.5 * Math.sin(dist * 0.085 - animPhase * 2.1);
+        const intensity = Math.max(0, edgeFade * (0.35 + rightBias * 0.85) * (0.65 + waveRipple * 0.35 + liveVoiceLevel * 0.6));
+
+        if (intensity < 0.08) continue;
+        const radius = Math.min(3.2, 0.8 + intensity * 2.1);
+        domeCtx.fillStyle = `rgba(${dotColor}, ${Math.min(0.92, intensity * 0.85).toFixed(2)})`;
+        domeCtx.beginPath();
+        domeCtx.arc(x, y, radius, 0, Math.PI * 2);
+        domeCtx.fill();
+      }
+    }
+
+    requestAnimationFrame(renderLivingStage);
+  }
+
+  // ===== TOAST & POP HELPERS =====
   let toastTimer = null;
   function showToast(msg) {
     toastEl.textContent = msg;
     toastEl.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2600);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2500);
+  }
+
+  function popTile(el) {
+    if (!el) return;
+    el.classList.remove('pop');
+    void el.offsetWidth;
+    el.classList.add('pop');
+    setTimeout(() => el.classList.remove('pop'), 260);
   }
 
   function saveCfg() {
     try { localStorage.setItem(LS_CFG, JSON.stringify(cfg)); } catch (_) {}
   }
 
-  // ===== RUSSIAN TEXT NORMALIZATION & FUZZY MATCHING =====
+  // ===== RUSSIAN WORD MATCHING =====
   function normWord(s) {
-    return (s || '')
-      .toLowerCase()
-      .replace(/ё/g, 'е')
-      .replace(/[^a-zа-я0-9]/gi, '');
+    return (s || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]/gi, '');
   }
 
   function editDist1(a, b) {
@@ -194,8 +289,7 @@
     while (i < a.length && j < b.length) {
       if (a[i] === b[j]) { i++; j++; }
       else {
-        diffs++;
-        if (diffs > 1) return false;
+        if (++diffs > 1) return false;
         if (a.length > b.length) i++;
         else if (b.length > a.length) j++;
         else { i++; j++; }
@@ -207,22 +301,26 @@
   function wordsMatch(scriptWord, spokenWord) {
     if (!scriptWord || !spokenWord) return false;
     if (scriptWord === spokenWord) return true;
-    // Handle Russian inflections/endings for stems >= 4 chars
     if (scriptWord.length >= 5 && spokenWord.length >= 5) {
       const stemLen = Math.min(scriptWord.length, spokenWord.length) - 1;
-      if (stemLen >= 4 && scriptWord.slice(0, stemLen) === spokenWord.slice(0, stemLen)) {
-        return true;
-      }
+      if (stemLen >= 4 && scriptWord.slice(0, stemLen) === spokenWord.slice(0, stemLen)) return true;
       if (editDist1(scriptWord, spokenWord)) return true;
     }
     return false;
   }
 
-  // ===== APPLY SETTINGS & THEME =====
+  // ===== APPLY SETTINGS & MOODS =====
   function applyCfg() {
-    document.documentElement.setAttribute('data-theme', cfg.theme);
-    metaThemeColor.setAttribute('content', cfg.theme === 'dark' ? '#0f1412' : '#f6f7f6');
+    document.documentElement.setAttribute('data-mood', cfg.mood);
+    document.documentElement.setAttribute('data-shell', cfg.shell);
     document.documentElement.style.setProperty('--font-size', cfg.fontSize + 'px');
+
+    moodName.textContent = MOOD_NAMES[cfg.mood] || 'Мята';
+    toggleShellBtn.textContent = cfg.shell === 'phone' ? 'Во весь экран' : 'В рамке телефона';
+
+    document.querySelectorAll('.mood-dot, .mood-chip').forEach((el) => {
+      el.classList.toggle('active', el.dataset.mood === cfg.mood);
+    });
 
     fontSizeSlider.value = cfg.fontSize;
     fontSizeVal.textContent = cfg.fontSize + ' px';
@@ -231,11 +329,7 @@
     speedVal.textContent = cfg.speed < 34 ? 'Медленно' : cfg.speed < 68 ? 'Средняя' : 'Быстро';
     speedRow.style.display = cfg.mode === 'autoscroll' ? 'flex' : 'none';
 
-    const modeNames = {
-      vosk: 'Офлайн-голос (Vosk)',
-      webspeech: 'Браузер (онлайн)',
-      autoscroll: 'Автоскролл'
-    };
+    const modeNames = { vosk: 'Офлайн-голос', webspeech: 'Браузер (онлайн)', autoscroll: 'Автоскролл' };
     modeLabel.textContent = modeNames[cfg.mode] || modeNames.vosk;
     modeSegmented.querySelectorAll('.seg-btn').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.mode === cfg.mode);
@@ -248,16 +342,23 @@
     toggleClean.classList.toggle('on', cfg.clean);
     toggleHeard.classList.toggle('on', cfg.showHeard);
     toggleMirror.classList.toggle('on', cfg.mirror);
-    toggleTheme.classList.toggle('on', cfg.theme === 'dark');
 
     updateOrbLabel();
   }
 
+  function cycleMood() {
+    const idx = MOODS.indexOf(cfg.mood);
+    cfg.mood = MOODS[(idx + 1) % MOODS.length];
+    saveCfg();
+    applyCfg();
+    showToast(`Настроение: ${MOOD_NAMES[cfg.mood]}`);
+  }
+
   function updateOrbLabel() {
     if (isRunning) {
-      orbLabel.textContent = cfg.mode === 'autoscroll' ? 'Идёт прокрутка' : 'Слушаю · пауза';
+      orbLabel.textContent = cfg.mode === 'autoscroll' ? 'Идёт прокрутка · пауза' : 'Слушаю · нажми для паузы';
     } else {
-      orbLabel.textContent = cfg.mode === 'autoscroll' ? 'Старт прокрутки' : 'Нажми и говори';
+      orbLabel.textContent = cfg.mode === 'autoscroll' ? 'Запустить прокрутку' : 'Нажми и говори';
     }
   }
 
@@ -266,16 +367,18 @@
     const val = speechInput.value.trim();
     if (!val) {
       textStats.textContent = '0 абз. · 0 слов';
+      capTextFill.style.width = '8%';
       return;
     }
     const pCount = val.split(/\n\s*\n/).filter((p) => p.trim()).length;
     const wCount = val.split(/\s+/).filter(Boolean).length;
     const mins = Math.max(1, Math.round(wCount / 120));
     textStats.textContent = `${pCount} абз. · ${wCount} слов · ~${mins} мин`;
+    capTextFill.style.width = `${Math.min(100, Math.max(20, Math.round((wCount / 120) * 100)))}%`;
+    danceActivityBars(val.length);
   }
 
   speechInput.value = localStorage.getItem(LS_TEXT) || DEMO_TEXT;
-  updateEditorStats();
 
   speechInput.addEventListener('input', () => {
     try { localStorage.setItem(LS_TEXT, speechInput.value); } catch (_) {}
@@ -286,7 +389,7 @@
     speechInput.value = DEMO_TEXT;
     try { localStorage.setItem(LS_TEXT, DEMO_TEXT); } catch (_) {}
     updateEditorStats();
-    showToast('Загружен пример выступления');
+    showToast('Загружен пример текста');
   });
 
   clearBtn.addEventListener('click', () => {
@@ -306,8 +409,27 @@
     showToast('Текст загружен из файла');
   });
 
-  themeQuickBtn.addEventListener('click', () => {
-    cfg.theme = cfg.theme === 'dark' ? 'sage' : 'dark';
+  moodCycleBtn.addEventListener('click', cycleMood);
+  stageStatusPill.addEventListener('click', cycleMood);
+
+  desktopMoodPills.addEventListener('click', (e) => {
+    const btn = e.target.closest('.mood-dot');
+    if (!btn) return;
+    cfg.mood = btn.dataset.mood;
+    saveCfg();
+    applyCfg();
+  });
+
+  sheetMoodRow.addEventListener('click', (e) => {
+    const btn = e.target.closest('.mood-chip');
+    if (!btn) return;
+    cfg.mood = btn.dataset.mood;
+    saveCfg();
+    applyCfg();
+  });
+
+  toggleShellBtn.addEventListener('click', () => {
+    cfg.shell = cfg.shell === 'phone' ? 'full' : 'phone';
     saveCfg();
     applyCfg();
   });
@@ -320,16 +442,10 @@
     wordAdvanceLog = [];
     metricWpm.textContent = '0';
 
-    const rawParas = text
-      .split(/\n\s*\n/)
-      .map((p) => p.trim())
-      .filter(Boolean);
-
+    const rawParas = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
     rawParas.forEach((pText, pIdx) => {
       const pEl = document.createElement('p');
       pEl.className = 'para';
-      pEl.dataset.para = String(pIdx);
-
       const startWordIdx = words.length;
       const lines = pText.split(/\n/);
 
@@ -340,7 +456,6 @@
           const span = document.createElement('span');
           span.className = 'w';
           span.textContent = tok;
-          span.dataset.idx = String(wIdx);
           span.addEventListener('click', () => highlightWord(wIdx, true, false));
           pEl.appendChild(span);
           if (tIdx < tokens.length - 1) pEl.appendChild(document.createTextNode(' '));
@@ -362,6 +477,7 @@
   function highlightWord(idx, smooth = true, trackTempo = false) {
     if (!words.length) return;
     const prevIdx = curWordIdx;
+    const prevPara = words[prevIdx] ? words[prevIdx].paraIdx : 0;
     const clamped = Math.max(0, Math.min(idx, words.length - 1));
     curWordIdx = clamped;
 
@@ -372,8 +488,7 @@
       wordAdvanceLog = wordAdvanceLog.filter((t) => now - t <= 20000);
       if (wordAdvanceLog.length >= 2) {
         const spanSec = Math.max(3, (now - wordAdvanceLog[0]) / 1000);
-        const wpm = Math.round((wordAdvanceLog.length / spanSec) * 60);
-        metricWpm.textContent = String(Math.min(260, wpm));
+        metricWpm.textContent = String(Math.min(260, Math.round((wordAdvanceLog.length / spanSec) * 60)));
       }
     }
 
@@ -384,26 +499,25 @@
     }
 
     const activeParaIdx = words[clamped].paraIdx;
-    paras.forEach((p, idxP) => {
-      p.el.classList.toggle('done-para', idxP < activeParaIdx);
-    });
+    paras.forEach((p, idxP) => p.el.classList.toggle('done-para', idxP < activeParaIdx));
 
     const pct = words.length > 1 ? Math.round((clamped / (words.length - 1)) * 100) : 100;
     metricPara.textContent = String(activeParaIdx + 1);
     metricPct.textContent = String(pct);
 
+    if (activeParaIdx !== prevPara) {
+      popTile(tilePara);
+      popTile(tilePct);
+    }
+
     const statusPrefix = isRunning ? (cfg.mode === 'autoscroll' ? 'Автоскролл' : 'Слушаю') : 'Готов';
     stageStatusText.textContent = `${statusPrefix} · ${activeParaIdx + 1} из ${paras.length}`;
 
-    // Scroll active word comfortably to ~28% of reading area
     const curEl = words[clamped].el;
     const containerRect = stageScroll.getBoundingClientRect();
     const elRect = curEl.getBoundingClientRect();
-    const targetTop = stageScroll.scrollTop + (elRect.top - containerRect.top) - containerRect.height * 0.28;
-    stageScroll.scrollTo({
-      top: Math.max(0, targetTop),
-      behavior: smooth ? 'smooth' : 'auto'
-    });
+    const targetTop = stageScroll.scrollTop + (elRect.top - containerRect.top) - containerRect.height * 0.30;
+    stageScroll.scrollTo({ top: Math.max(0, targetTop), behavior: smooth ? 'smooth' : 'auto' });
   }
 
   function stepParagraph(delta) {
@@ -413,7 +527,6 @@
     highlightWord(paras[targetPara].startWordIdx, true, false);
   }
 
-  // ===== MATCH SPOKEN TRANSCRIPT TO SCRIPT =====
   function matchSpoken(transcript) {
     if (!transcript || !words.length) return;
     const spoken = transcript.trim().split(/\s+/).map(normWord).filter(Boolean);
@@ -422,23 +535,16 @@
     const tail = spoken.slice(-4);
     const maxLookahead = Math.min(words.length - 1, curWordIdx + 22);
 
-    // 1. Two consecutive words match (strongest signal, allows skipping up to 22 words)
     if (tail.length >= 2) {
       const wA = tail[tail.length - 2];
       const wB = tail[tail.length - 1];
       for (let i = curWordIdx; i < maxLookahead; i++) {
         if (wordsMatch(words[i].norm, wA) && wordsMatch(words[i + 1].norm, wB)) {
-          if (i + 1 > curWordIdx) {
-            highlightWord(i + 1, true, true);
-            return;
-          }
+          if (i + 1 > curWordIdx) { highlightWord(i + 1, true, true); return; }
         }
       }
     }
 
-    // 2. Single word match:
-    //    - Near window (+1..+3): any word
-    //    - Further window (+4..+12): only non-stop-words length >= 4
     const lastSpoken = tail[tail.length - 1];
     if (!lastSpoken) return;
     const isMeaningful = lastSpoken.length >= 4 && !STOP_WORDS.has(lastSpoken);
@@ -452,10 +558,11 @@
     }
   }
 
-  // ===== OFFLINE MODEL DOWNLOAD + REAL IDBFS UNPACK =====
+  // ===== OFFLINE VOSK MODEL =====
   function setHeroProgress(pct, pillText, descText, isReady = false) {
     offlinePct.textContent = `${pct}%`;
-    modelProgressFill.style.width = `${pct}%`;
+    modelProgressFill.style.width = `${Math.max(10, pct)}%`;
+    capReadyFill.style.width = isReady ? '100%' : `${Math.max(20, Math.round(pct * 0.8))}%`;
     offlineStatusPill.textContent = pillText;
     offlineStatusPill.classList.toggle('ready', isReady);
     offlineDesc.textContent = descText;
@@ -463,46 +570,31 @@
 
   async function initVoskModel() {
     if (voskModel && voskModel.ready) return voskModel;
-    if (typeof Vosk === 'undefined') {
-      throw new Error('Библиотека vosk.js не загружена');
-    }
+    if (typeof Vosk === 'undefined') throw new Error('vosk.js не загружен');
     voskModel = await Vosk.createModel(ABS_MODEL_URL);
-    if (!voskModel || !voskModel.ready) {
-      throw new Error('Модель Vosk не перешла в состояние ready');
-    }
+    if (!voskModel || !voskModel.ready) throw new Error('Модель Vosk не готова');
     try { localStorage.setItem(LS_VOSK_READY, ABS_MODEL_URL); } catch (_) {}
     return voskModel;
   }
 
-  async function refreshModelBadge() {
+  function refreshModelBadge() {
     const unpacked = localStorage.getItem(LS_VOSK_READY) === ABS_MODEL_URL;
     if (unpacked) {
-      setHeroProgress(
-        100,
-        'Готово к авиарежиму',
-        'Русская модель распакована в память телефона — работает полностью без интернета.',
-        true
-      );
+      setHeroProgress(100, 'Готово к авиарежиму', 'Русская модель в памяти телефона — работает полностью без сети.', true);
       downloadModelBtn.innerHTML = '<span>Готово ✓</span>';
       downloadModelBtn.disabled = true;
     } else {
-      setHeroProgress(
-        0,
-        'Не загружен',
-        'Нажми по Wi-Fi один раз — скачает и распакует русскую модель (~44 МБ) в память телефона.',
-        false
-      );
+      setHeroProgress(0, 'Ждёт загрузки', 'Один раз по Wi-Fi — и суфлёр работает полностью в авиарежиме (~44 МБ).', false);
       downloadModelBtn.disabled = false;
     }
   }
 
   async function prepareOfflineModel() {
     downloadModelBtn.disabled = true;
-    downloadModelBtn.innerHTML = '<span>Загрузка…</span>';
-    setHeroProgress(4, 'Скачивание…', 'Загружаю архив русской модели речи (44 МБ)…', false);
+    downloadModelBtn.innerHTML = '<span>Качаю…</span>';
+    setHeroProgress(6, 'Скачивание…', 'Загружаю русскую модель речи (44 МБ)…', false);
 
     try {
-      // Step 1: Stream download with real progress into Cache API
       const resp = await fetch(ABS_MODEL_URL);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const total = Number(resp.headers.get('content-length')) || 45500000;
@@ -515,9 +607,8 @@
         if (done) break;
         chunks.push(value);
         received += value.length;
-        const pct = Math.min(80, Math.max(5, Math.round((received / total) * 80)));
-        const mb = (received / 1048576).toFixed(1);
-        setHeroProgress(pct, `${mb} МБ`, 'Сохраняю модель в локальный кеш…', false);
+        const pct = Math.min(80, Math.max(8, Math.round((received / total) * 80)));
+        setHeroProgress(pct, `${(received / 1048576).toFixed(1)} МБ`, 'Сохраняю модель в память…', false);
       }
 
       if ('caches' in window) {
@@ -528,131 +619,59 @@
         }));
       }
 
-      // Step 2: Actually unpack into Vosk's persistent IDBFS right now while online!
-      setHeroProgress(88, 'Распаковка…', 'Распаковываю модель в IndexedDB для мгновенного запуска в авиарежиме…', false);
+      setHeroProgress(88, 'Распаковка…', 'Распаковываю модель в IndexedDB для авиарежима…', false);
       await initVoskModel();
-
-      await refreshModelBadge();
-      showToast('Офлайн-модель готова к авиарежиму');
-      return true;
+      refreshModelBadge();
+      showToast('Готово! Можно включать авиарежим');
     } catch (err) {
       const msg = (err && err.message) ? err.message : 'Сбой загрузки';
-      setHeroProgress(0, 'Ошибка', `Не удалось подготовить модель: ${msg}`, false);
+      setHeroProgress(0, 'Ошибка', `Не удалось загрузить: ${msg}`, false);
       downloadModelBtn.innerHTML = '<span>Повторить</span>';
       downloadModelBtn.disabled = false;
       showToast('Ошибка: ' + msg);
-      return false;
     }
   }
 
   downloadModelBtn.addEventListener('click', prepareOfflineModel);
-
-  // Expose tiny verification hook for automated health check
-  window.__suflyorDebug = {
-    absModelUrl: ABS_MODEL_URL,
-    initVoskModel,
-    getState: () => ({
-      curWordIdx,
-      wordsCount: words.length,
-      parasCount: paras.length,
-      voskReady: Boolean(voskModel && voskModel.ready)
-    })
-  };
 
   // ===== WAKE LOCK =====
   async function requestWakeLock() {
     if (!('wakeLock' in navigator)) return;
     try { wakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}
   }
-
   function releaseWakeLock() {
-    if (wakeLock) {
-      wakeLock.release().catch(() => {});
-      wakeLock = null;
-    }
+    if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
   }
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && isRunning) requestWakeLock();
-  });
-
-  // ===== LIVE EQUALIZER WAVEFORM =====
-  function startWaveLoop() {
-    if (!analyserNode) return;
-    const data = new Uint8Array(analyserNode.frequencyBinCount);
-    const draw = () => {
-      if (!isRunning || !analyserNode) return;
-      analyserNode.getByteFrequencyData(data);
-      let sum = 0;
-      for (let i = 0; i < data.length; i++) sum += data[i];
-      const level = sum / data.length / 255;
-
-      leftBars.forEach((bar, i) => {
-        const v = data[(i * 2) % data.length] || 0;
-        const h = Math.max(4, Math.min(34, 5 + (v / 255) * 30));
-        bar.style.height = h + 'px';
-      });
-      rightBars.forEach((bar, i) => {
-        const base = Number(bar.dataset.base);
-        const h = Math.max(4, Math.min(18, base + level * 8));
-        bar.style.height = h + 'px';
-      });
-      waveRaf = requestAnimationFrame(draw);
-    };
-    waveRaf = requestAnimationFrame(draw);
-  }
-
-  function resetWave() {
-    cancelAnimationFrame(waveRaf);
-    leftBars.forEach((b) => { b.style.height = b.dataset.base + 'px'; });
-    rightBars.forEach((b) => { b.style.height = b.dataset.base + 'px'; });
-  }
-
-  // ===== VOICE / SCROLL ENGINES =====
+  // ===== VOICE / AUTOSCROLL ENGINES =====
   async function startVosk() {
     stageDot.className = 'status-dot loading';
-    heardCaption.textContent = 'Инициализирую офлайн-модель речи…';
+    heardCaption.textContent = 'Запускаю офлайн-голос…';
 
-    // Create AudioContext INSIDE user gesture first (critical for iOS Safari / Android Chrome!)
     const AC = window.AudioContext || window.webkitAudioContext;
     audioCtx = new AC();
-    if (audioCtx.state === 'suspended') {
-      await audioCtx.resume();
-    }
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
     const actualSampleRate = audioCtx.sampleRate;
 
     mediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        channelCount: 1
-      },
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
       video: false
     });
 
     await initVoskModel();
 
     if (!voskRecognizer || voskSampleRate !== actualSampleRate) {
-      if (voskRecognizer) {
-        try { voskRecognizer.remove(); } catch (_) {}
-      }
+      if (voskRecognizer) { try { voskRecognizer.remove(); } catch (_) {} }
       voskSampleRate = actualSampleRate;
       voskRecognizer = new voskModel.KaldiRecognizer(actualSampleRate);
       voskRecognizer.setWords(true);
       voskRecognizer.on('partialresult', (msg) => {
         const p = msg && msg.result && msg.result.partial;
-        if (p) {
-          heardCaption.textContent = `«${p}»`;
-          matchSpoken(p);
-        }
+        if (p) { heardCaption.textContent = `«${p}»`; matchSpoken(p); }
       });
       voskRecognizer.on('result', (msg) => {
         const t = msg && msg.result && msg.result.text;
-        if (t) {
-          heardCaption.textContent = `«${t}»`;
-          matchSpoken(t);
-        }
+        if (t) { heardCaption.textContent = `«${t}»`; matchSpoken(t); }
       });
     }
 
@@ -663,12 +682,9 @@
     processorNode = audioCtx.createScriptProcessor(4096, 1, 1);
     processorNode.onaudioprocess = (ev) => {
       if (!isRunning || !voskRecognizer) return;
-      try {
-        voskRecognizer.acceptWaveform(ev.inputBuffer);
-      } catch (_) {}
+      try { voskRecognizer.acceptWaveform(ev.inputBuffer); } catch (_) {}
     };
 
-    // Route through silent GainNode(0) so onaudioprocess ALWAYS fires with ZERO speaker feedback!
     silentGain = audioCtx.createGain();
     silentGain.gain.value = 0;
 
@@ -677,58 +693,45 @@
     processorNode.connect(silentGain);
     silentGain.connect(audioCtx.destination);
 
-    startWaveLoop();
     stageDot.className = 'status-dot listening';
     const activeParaIdx = words[curWordIdx] ? words[curWordIdx].paraIdx : 0;
     stageStatusText.textContent = `Слушаю · ${activeParaIdx + 1} из ${paras.length}`;
-    heardCaption.textContent = 'Слушаю офлайн — начинай говорить';
+    heardCaption.textContent = 'Слушаю офлайн — просто говори';
   }
 
   function startWebSpeech() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) throw new Error('Онлайн-распознавание не поддерживается этим браузером');
+    if (!SR) throw new Error('Онлайн-распознавание не поддерживается');
     webRec = new SR();
     webRec.lang = 'ru-RU';
     webRec.continuous = true;
     webRec.interimResults = true;
-
     webRec.onresult = (event) => {
       let text = '';
       for (let i = Math.max(0, event.resultIndex - 1); i < event.results.length; i++) {
         text += ' ' + event.results[i][0].transcript;
       }
       text = text.trim();
-      if (text) {
-        heardCaption.textContent = `«${text}»`;
-        matchSpoken(text);
-      }
+      if (text) { heardCaption.textContent = `«${text}»`; matchSpoken(text); }
     };
-
     webRec.onerror = (e) => {
-      if (e.error === 'not-allowed') {
-        showToast('Нет доступа к микрофону');
-        stopEngine();
-      }
+      if (e.error === 'not-allowed') { showToast('Нет доступа к микрофону'); stopEngine(); }
     };
-
     webRec.onend = () => {
-      if (isRunning && cfg.mode === 'webspeech') {
-        try { webRec.start(); } catch (_) {}
-      }
+      if (isRunning && cfg.mode === 'webspeech') { try { webRec.start(); } catch (_) {} }
     };
-
     webRec.start();
     stageDot.className = 'status-dot listening';
     const activeParaIdx = words[curWordIdx] ? words[curWordIdx].paraIdx : 0;
     stageStatusText.textContent = `Слушаю · ${activeParaIdx + 1} из ${paras.length}`;
-    heardCaption.textContent = 'Слушаю через браузер — начинай говорить';
+    heardCaption.textContent = 'Слушаю через браузер — говори';
   }
 
   function startAutoscroll() {
     stageDot.className = 'status-dot ready';
     const activeParaIdx = words[curWordIdx] ? words[curWordIdx].paraIdx : 0;
     stageStatusText.textContent = `Автоскролл · ${activeParaIdx + 1} из ${paras.length}`;
-    heardCaption.textContent = 'Плавная прокрутка · нажми на сферу для паузы';
+    heardCaption.textContent = 'Плавная прокрутка · тап по куполу = пауза';
     lastFrameTs = performance.now();
 
     const step = (ts) => {
@@ -744,8 +747,8 @@
   async function startEngine() {
     if (isRunning) return;
     isRunning = true;
-    voiceOrb.classList.toggle('listening', cfg.mode !== 'autoscroll');
-    voiceOrb.classList.toggle('autoscroll', cfg.mode === 'autoscroll');
+    voiceOrb.classList.add('listening');
+    if (dynamicIsland) dynamicIsland.classList.add('active');
     updateOrbLabel();
     await requestWakeLock();
 
@@ -757,42 +760,32 @@
       stopEngine();
       stageDot.className = 'status-dot error';
       const msg = (err && err.message) ? err.message : 'Нет доступа к микрофону';
-      heardCaption.textContent = `${msg} — используй свайп или Автоскролл`;
+      heardCaption.textContent = `${msg} — листай свайпом или Автоскроллом`;
       showToast(msg);
     }
   }
 
   function stopEngine() {
     isRunning = false;
-    voiceOrb.classList.remove('listening', 'autoscroll');
+    voiceOrb.classList.remove('listening');
+    if (dynamicIsland) dynamicIsland.classList.remove('active');
     stageDot.className = 'status-dot';
     updateOrbLabel();
 
     const activeParaIdx = words[curWordIdx] ? words[curWordIdx].paraIdx : 0;
     stageStatusText.textContent = `Пауза · ${activeParaIdx + 1} из ${paras.length}`;
-    heardCaption.textContent = 'Пауза · свайпай абзацы или нажми на сферу';
+    heardCaption.textContent = 'Пауза · свайп по тексту или тап по куполу';
 
     cancelAnimationFrame(scrollRaf);
-    resetWave();
     releaseWakeLock();
 
-    if (webRec) {
-      try { webRec.onend = null; webRec.stop(); } catch (_) {}
-      webRec = null;
-    }
+    if (webRec) { try { webRec.onend = null; webRec.stop(); } catch (_) {} webRec = null; }
     [processorNode, silentGain, analyserNode, sourceNode].forEach((n) => {
       if (n) { try { n.disconnect(); } catch (_) {} }
     });
     processorNode = silentGain = analyserNode = sourceNode = null;
-
-    if (audioCtx) {
-      try { audioCtx.close(); } catch (_) {}
-      audioCtx = null;
-    }
-    if (mediaStream) {
-      mediaStream.getTracks().forEach((t) => t.stop());
-      mediaStream = null;
-    }
+    if (audioCtx) { try { audioCtx.close(); } catch (_) {} audioCtx = null; }
+    if (mediaStream) { mediaStream.getTracks().forEach((t) => t.stop()); mediaStream = null; }
   }
 
   voiceOrb.addEventListener('click', () => {
@@ -803,28 +796,25 @@
   // ===== SCREEN TRANSITIONS =====
   startBtn.addEventListener('click', () => {
     const text = speechInput.value.trim();
-    if (!text) {
-      showToast('Сначала вставь текст выступления');
-      speechInput.focus();
-      return;
-    }
+    if (!text) { showToast('Сначала вставь текст выступления'); speechInput.focus(); return; }
     buildStage(text);
     editScreen.classList.remove('active');
     stageScreen.classList.add('active');
+    if (phoneChrome) phoneChrome.classList.add('on-stage');
   });
 
   backBtn.addEventListener('click', () => {
     stopEngine();
     stageScreen.classList.remove('active');
     editScreen.classList.add('active');
+    if (phoneChrome) phoneChrome.classList.remove('on-stage');
   });
 
   // ===== PARAGRAPH NAVIGATION & SWIPES =====
   prevParaBtn.addEventListener('click', () => stepParagraph(-1));
   nextParaBtn.addEventListener('click', () => stepParagraph(1));
 
-  let touchStartX = 0;
-  let touchStartY = 0;
+  let touchStartX = 0, touchStartY = 0;
   stageScroll.addEventListener('touchstart', (e) => {
     if (!e.touches.length) return;
     touchStartX = e.touches[0].clientX;
@@ -836,8 +826,7 @@
     const dx = e.changedTouches[0].clientX - touchStartX;
     const dy = e.changedTouches[0].clientY - touchStartY;
     if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.35) {
-      if (dx < 0) stepParagraph(1);
-      else stepParagraph(-1);
+      if (dx < 0) stepParagraph(1); else stepParagraph(-1);
     }
   }, { passive: true });
 
@@ -845,22 +834,12 @@
     if (!stageScreen.classList.contains('active')) return;
     if (e.key === 'ArrowRight' || e.key === 'PageDown') stepParagraph(1);
     if (e.key === 'ArrowLeft' || e.key === 'PageUp') stepParagraph(-1);
-    if (e.key === ' ') {
-      e.preventDefault();
-      if (isRunning) stopEngine(); else startEngine();
-    }
+    if (e.key === ' ') { e.preventDefault(); if (isRunning) stopEngine(); else startEngine(); }
   });
 
   // ===== SETTINGS SHEET =====
-  function openSheet() {
-    sheetBackdrop.classList.add('open');
-    settingsSheet.classList.add('open');
-  }
-
-  function closeSheet() {
-    sheetBackdrop.classList.remove('open');
-    settingsSheet.classList.remove('open');
-  }
+  function openSheet() { sheetBackdrop.classList.add('open'); settingsSheet.classList.add('open'); }
+  function closeSheet() { sheetBackdrop.classList.remove('open'); settingsSheet.classList.remove('open'); }
 
   settingsBtn.addEventListener('click', openSheet);
   closeSheetBtn.addEventListener('click', closeSheet);
@@ -877,37 +856,20 @@
     if (wasRunning) startEngine();
   });
 
-  fontSizeSlider.addEventListener('input', () => {
-    cfg.fontSize = Number(fontSizeSlider.value);
-    saveCfg();
-    applyCfg();
-  });
-
-  speedSlider.addEventListener('input', () => {
-    cfg.speed = Number(speedSlider.value);
-    saveCfg();
-    applyCfg();
-  });
-
+  fontSizeSlider.addEventListener('input', () => { cfg.fontSize = Number(fontSizeSlider.value); saveCfg(); applyCfg(); });
+  speedSlider.addEventListener('input', () => { cfg.speed = Number(speedSlider.value); saveCfg(); applyCfg(); });
   toggleClean.addEventListener('click', () => { cfg.clean = !cfg.clean; saveCfg(); applyCfg(); });
   toggleHeard.addEventListener('click', () => { cfg.showHeard = !cfg.showHeard; saveCfg(); applyCfg(); });
   toggleMirror.addEventListener('click', () => { cfg.mirror = !cfg.mirror; saveCfg(); applyCfg(); });
-  toggleTheme.addEventListener('click', () => {
-    cfg.theme = cfg.theme === 'dark' ? 'sage' : 'dark';
-    saveCfg();
-    applyCfg();
-  });
-
-  resetPosBtn.addEventListener('click', () => {
-    highlightWord(0, true, false);
-    closeSheet();
-  });
+  resetPosBtn.addEventListener('click', () => { highlightWord(0, true, false); closeSheet(); });
 
   // ===== INIT =====
-  buildHalftoneOrb();
+  buildActivityBars();
   buildWaveformBars();
+  updateEditorStats();
   applyCfg();
   refreshModelBadge();
+  requestAnimationFrame(renderLivingStage);
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});

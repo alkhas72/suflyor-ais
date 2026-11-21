@@ -1,237 +1,309 @@
 <!doctype html>
-<html lang="ru" data-theme="sage">
+<html lang="ru" data-mood="sage" data-shell="phone">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
-  <meta name="theme-color" content="#F6F7F6" id="meta-theme-color" />
+  <meta name="theme-color" content="#F4B8DF" id="meta-theme-color" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <title>Суфлёр АИС · Голос и Офлайн</title>
+  <title>Суфлёр АИС · Живой суфлёр</title>
   <link rel="manifest" href="./manifest.json" />
   <link rel="icon" href="./icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
 
-  <!-- ===== SCREEN 1: SETUP / OVERVIEW (NeuFlx Progress-inspired Editorial Light UI) ===== -->
-  <main id="edit-screen" class="screen active">
-    <header class="setup-topbar">
-      <div class="brand-lockup">
-        <span class="brand-wordmark">Суфлёр</span>
-        <span class="brand-badge">АИС</span>
-      </div>
-      <button id="theme-quick-btn" class="circle-btn" title="Светлая / Тёмная сцена" aria-label="Сменить тему">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="9"/>
-          <path d="M12 3v18a9 9 0 0 0 0-18z" fill="currentColor" stroke="none"/>
-        </svg>
-      </button>
-    </header>
+  <!-- ===== DESKTOP PLAYFUL STAGE BACKDROP (hidden on real phones) ===== -->
+  <div class="desktop-stage" aria-hidden="true">
+    <div class="bg-blob blob-1"></div>
+    <div class="bg-blob blob-2"></div>
+    <div class="bg-blob blob-3"></div>
+  </div>
 
-    <!-- NeuFlx Horizontal Pill Tabs -->
-    <nav class="pill-tabs" aria-label="Действия с текстом">
-      <span class="pill-tab active">Текст</span>
-      <label class="pill-tab" style="cursor:pointer">
-        Файл .txt
-        <input id="file-input" type="file" accept=".txt,.md,text/plain" hidden />
-      </label>
-      <button id="demo-btn" class="pill-tab" type="button">Пример</button>
-      <button id="clear-btn" class="pill-tab" type="button">Очистить</button>
-    </nav>
-
-    <!-- NeuFlx Hero Readiness Card ("Fluent Mind 75%" sage-green gradient card) -->
-    <section class="hero-model-card" id="hero-model-card">
-      <div class="hero-card-top">
-        <span class="hero-kicker">ОФЛАЙН-ГОЛОС · АВИАРЕЖИМ</span>
-        <span class="hero-status-pill" id="offline-status-pill">Не загружен</span>
-      </div>
-
-      <div class="hero-card-main">
-        <div class="hero-metric" id="offline-pct">0%</div>
-        <button id="download-model-btn" class="hero-action-btn" type="button">
-          <span>Подготовить</span>
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/>
-          </svg>
-        </button>
-      </div>
-
-      <div class="hero-desc" id="offline-desc">Нажми по Wi-Fi один раз — скачает и распакует русскую модель (~44 МБ) в память телефона.</div>
-
-      <div class="capsule-track">
-        <div class="capsule-fill" id="model-progress-fill"></div>
-      </div>
-    </section>
-
-    <!-- Speech Editor Card -->
-    <section class="editor-card">
-      <div class="editor-head">
-        <span class="micro-label">ТЕКСТ ВЫСТУПЛЕНИЯ</span>
-        <span class="editor-stats" id="text-stats">0 абз. · 0 слов</span>
-      </div>
-      <textarea
-        id="speech-input"
-        placeholder="Вставь сюда текст выступления.&#10;&#10;Пустая строка разделяет абзацы — по ним удобно листать свайпом и кнопками."
-        spellcheck="false"
-      ></textarea>
-    </section>
-
-    <div class="setup-footer">
-      <button id="start-btn" class="primary-cta" type="button">
-        <span>Открыть суфлёр</span>
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M5 12h14m-6-6 6 6-6 6"/>
-        </svg>
-      </button>
+  <!-- Desktop side mood & frame switcher (hidden on real phones) -->
+  <aside class="desktop-dock" aria-label="Оформление витрины">
+    <div class="desktop-brand">
+      <span class="desktop-logo">Суфлёр</span>
+      <span class="desktop-tag">АИС · Офлайн</span>
     </div>
-  </main>
-
-  <!-- ===== SCREEN 2: ACTIVE STAGE (NeuFlx Active Audio Lesson Sage Gradient UI) ===== -->
-  <section id="stage-screen" class="screen">
-    <!-- Top bar: Back circle · Dark Pill Status · Settings circle -->
-    <header class="stage-topbar">
-      <button id="back-btn" class="stage-circle-btn" aria-label="Вернуться к тексту">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M15 18l-6-6 6-6"/>
-        </svg>
-      </button>
-
-      <div id="stage-status-pill" class="stage-status-pill">
-        <span id="stage-dot" class="status-dot"></span>
-        <span id="stage-status-text">Готов · 1 из 5</span>
-      </div>
-
-      <button id="settings-btn" class="stage-circle-btn" aria-label="Настройки">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 0 1 0 4h-.09c-.66 0-1.25.4-1.51 1z"/>
-        </svg>
-      </button>
-    </header>
-
-    <!-- Dedicated Scrollable Reading Stage (never collides with bottom panel) -->
-    <div id="stage-scroll" class="stage-scroll">
-      <article id="stage-text"></article>
+    <div class="mood-pills" id="desktop-mood-pills" role="group" aria-label="Настроение цвета">
+      <button class="mood-dot active" data-mood="sage" title="Мята" style="--c:#8EC0A1"></button>
+      <button class="mood-dot" data-mood="orchid" title="Орхидея" style="--c:#E88CC8"></button>
+      <button class="mood-dot" data-mood="lime" title="Лайм" style="--c:#E6EE6C"></button>
+      <button class="mood-dot" data-mood="night" title="Тёмная сцена" style="--c:#1A2420"></button>
     </div>
-
-    <!-- Bottom Interactive Panel (Waveform + 3 Frosted Metrics + Radial Halftone Orb) -->
-    <footer class="stage-bottom" id="stage-bottom">
-      <!-- NeuFlx Equalizer Waveform with Center Playhead & Dashed Line -->
-      <div class="wave-section" id="wave-section">
-        <div class="wave-track" id="wave-track" aria-hidden="true">
-          <div class="wave-bars-left" id="wave-bars-left"></div>
-          <div class="wave-playhead">
-            <span class="playhead-dot"></span>
-          </div>
-          <div class="wave-bars-right" id="wave-bars-right"></div>
-        </div>
-        <div class="heard-caption" id="heard-caption">Нажми на сферу внизу, чтобы начать</div>
-      </div>
-
-      <!-- NeuFlx 3 Frosted Metric Tiles -->
-      <div class="metrics-grid" id="metrics-grid">
-        <div class="metric-tile">
-          <div class="metric-label">
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-            <span>ТЕМП</span>
-          </div>
-          <div class="metric-value"><span id="metric-wpm">0</span> <small>сл/м</small></div>
-        </div>
-        <div class="metric-tile">
-          <div class="metric-label">
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 6h16M4 12h10M4 18h14"/></svg>
-            <span>АБЗАЦ</span>
-          </div>
-          <div class="metric-value"><span id="metric-para">1</span> <small id="metric-para-total">/ 5</small></div>
-        </div>
-        <div class="metric-tile">
-          <div class="metric-label">
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-            <span>ПРОГРЕСС</span>
-          </div>
-          <div class="metric-value"><span id="metric-pct">0</span><small>%</small></div>
-        </div>
-      </div>
-
-      <!-- NeuFlx Bottom Navigation + Radial Halftone Voice Orb -->
-      <div class="orb-row">
-        <button id="prev-para-btn" class="para-nav-btn" aria-label="Предыдущий абзац" type="button">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M15 18l-6-6 6-6"/>
-          </svg>
-        </button>
-
-        <button id="voice-orb" class="halftone-orb" aria-label="Старт или пауза распознавания" type="button">
-          <span class="orb-glow" aria-hidden="true"></span>
-          <svg class="orb-dots" viewBox="0 0 160 160" width="126" height="126" aria-hidden="true" id="orb-dots-svg"></svg>
-          <span class="orb-label" id="orb-label">Нажми и говори</span>
-        </button>
-
-        <button id="next-para-btn" class="para-nav-btn" aria-label="Следующий абзац" type="button">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 18l6-6-6-6"/>
-          </svg>
-        </button>
-      </div>
-    </footer>
-  </section>
-
-  <!-- ===== SETTINGS BOTTOM SHEET ===== -->
-  <div id="sheet-backdrop" class="sheet-backdrop"></div>
-  <aside id="settings-sheet" class="sheet" aria-label="Настройки суфлёра">
-    <div class="sheet-handle"></div>
-    <div class="sheet-header">
-      <h2>Настройки</h2>
-      <button id="close-sheet-btn" class="sheet-done-btn" type="button">Готово</button>
-    </div>
-
-    <div class="setting-block">
-      <div class="setting-head">
-        <span>РЕЖИМ ВЕДЕНИЯ</span>
-        <strong id="mode-label">Офлайн-голос (Vosk)</strong>
-      </div>
-      <div class="segmented" id="mode-segmented">
-        <button class="seg-btn active" data-mode="vosk" type="button">Офлайн</button>
-        <button class="seg-btn" data-mode="webspeech" type="button">Онлайн</button>
-        <button class="seg-btn" data-mode="autoscroll" type="button">Автоскролл</button>
-      </div>
-    </div>
-
-    <div class="setting-block">
-      <div class="setting-head">
-        <span>РАЗМЕР ШРИФТА</span>
-        <strong id="font-size-val">36 px</strong>
-      </div>
-      <input id="font-size-slider" type="range" min="24" max="64" step="2" value="36" />
-    </div>
-
-    <div class="setting-block" id="speed-row">
-      <div class="setting-head">
-        <span>СКОРОСТЬ АВТОСКРОЛЛА</span>
-        <strong id="speed-val">Средняя</strong>
-      </div>
-      <input id="speed-slider" type="range" min="15" max="110" step="5" value="42" />
-    </div>
-
-    <div class="toggle-grid">
-      <button id="toggle-clean" class="toggle-tile" type="button">
-        <span>Чистый экран</span><span class="tile-dot"></span>
-      </button>
-      <button id="toggle-heard" class="toggle-tile on" type="button">
-        <span>Слова внизу</span><span class="tile-dot"></span>
-      </button>
-      <button id="toggle-mirror" class="toggle-tile" type="button">
-        <span>Зеркало</span><span class="tile-dot"></span>
-      </button>
-      <button id="toggle-theme" class="toggle-tile" type="button">
-        <span>Тёмная сцена</span><span class="tile-dot"></span>
-      </button>
-    </div>
-
-    <button id="reset-pos-btn" class="sheet-reset-btn" type="button">Вернуться в начало выступления</button>
+    <button id="toggle-shell-btn" class="desktop-shell-btn" type="button" title="Рамка телефона / Во весь экран">
+      Во весь экран
+    </button>
   </aside>
 
-  <div id="toast" class="toast"></div>
+  <!-- ===== REALISTIC PHONE SHELL (seamless 100% viewport on real mobile) ===== -->
+  <div class="phone-frame" id="phone-frame">
+    <!-- Decorative iPhone Hardware Status Bar (desktop only) -->
+    <div class="phone-chrome" aria-hidden="true">
+      <span class="chrome-time" id="chrome-time">9:41</span>
+      <div class="dynamic-island">
+        <span class="island-dot" id="island-dot"></span>
+      </div>
+      <div class="chrome-icons">
+        <svg viewBox="0 0 18 12" width="16" height="11" fill="currentColor"><rect x="0" y="7" width="3" height="5" rx="1"/><rect x="4.5" y="5" width="3" height="7" rx="1"/><rect x="9" y="2.5" width="3" height="9.5" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1"/></svg>
+        <svg viewBox="0 0 24 12" width="22" height="11" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1.5" width="19" height="9" rx="2.5"/><rect x="3" y="3.5" width="14" height="5" rx="1" fill="currentColor" stroke="none"/><path d="M22 4.5v3" stroke-linecap="round"/></svg>
+      </div>
+    </div>
+
+    <div class="phone-viewport">
+
+      <!-- ================================================================
+           SCREEN 1: PLAYFUL EDITORIAL SETUP (NeuFlx Progress + Activity)
+           ================================================================ -->
+      <main id="edit-screen" class="screen active">
+        <header class="setup-topbar">
+          <div class="brand-lockup">
+            <span class="brand-wordmark">Суфлёр</span>
+            <span class="brand-spark" aria-hidden="true"></span>
+          </div>
+          <div class="topbar-right">
+            <button id="mood-cycle-btn" class="mood-cycle-btn" title="Сменить цвет настроения" aria-label="Сменить цвет настроения">
+              <span class="swatch s-sage"></span>
+              <span class="swatch s-orchid"></span>
+              <span class="swatch s-lime"></span>
+            </button>
+          </div>
+        </header>
+
+        <!-- Playful Colored Pill Tabs -->
+        <nav class="pill-tabs" aria-label="Инструменты текста">
+          <span class="pill-tab tab-pink active">Текст</span>
+          <label class="pill-tab tab-dark" style="cursor:pointer">
+            Файл .txt
+            <input id="file-input" type="file" accept=".txt,.md,text/plain" hidden />
+          </label>
+          <button id="demo-btn" class="pill-tab tab-lime" type="button">Пример</button>
+          <button id="clear-btn" class="pill-tab tab-soft" type="button">Очистить</button>
+        </nav>
+
+        <!-- Hero Readiness Card ("FLUENT MIND 75%" + animated colored capsules) -->
+        <section class="hero-model-card" id="hero-model-card">
+          <div class="hero-shimmer" aria-hidden="true"></div>
+          <div class="hero-card-top">
+            <span class="hero-kicker">ОФЛАЙН-ГОЛОС · АВИАРЕЖИМ</span>
+            <span class="hero-status-pill" id="offline-status-pill">Ждёт загрузки</span>
+          </div>
+
+          <div class="hero-card-main">
+            <div class="hero-metric" id="offline-pct">0%</div>
+            <button id="download-model-btn" class="hero-action-btn" type="button">
+              <span>Скачать RU</span>
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="hero-desc" id="offline-desc">Один раз по Wi-Fi — и суфлёр работает полностью в авиарежиме (~44 МБ).</div>
+
+          <!-- 3 Playful NeuFlx Mastery Capsules -->
+          <div class="mastery-bars">
+            <div class="m-bar"><div class="m-fill m-green" id="model-progress-fill" style="width: 12%"></div></div>
+            <div class="m-bar"><div class="m-fill m-pink" id="cap-text-fill" style="width: 68%"></div></div>
+            <div class="m-bar"><div class="m-fill m-lime" id="cap-ready-fill" style="width: 35%"></div></div>
+          </div>
+        </section>
+
+        <!-- Speech Editor Card + Living Activity Mini-Bars -->
+        <section class="editor-card">
+          <div class="editor-head">
+            <span class="micro-label">ТВОЯ РЕЧЬ</span>
+            <span class="editor-stats" id="text-stats">5 абз. · 60 слов</span>
+          </div>
+          <textarea
+            id="speech-input"
+            placeholder="Вставь сюда текст выступления.&#10;&#10;Пустая строка — новый абзац. Листай свайпом или просто говори!"
+            spellcheck="false"
+          ></textarea>
+          <!-- Playful colorful mini-bars reacting as you type (NeuFlx Activity This Week) -->
+          <div class="activity-bars" id="activity-bars" aria-hidden="true"></div>
+        </section>
+
+        <div class="setup-footer">
+          <button id="start-btn" class="primary-cta" type="button">
+            <span>На сцену</span>
+            <span class="cta-arrow">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14m-6-6 6 6-6 6"/>
+              </svg>
+            </span>
+          </button>
+        </div>
+      </main>
+
+      <!-- ================================================================
+           SCREEN 2: LIVING STAGE (NeuFlx Active Audio Lesson — 1:1 Airy & Playful)
+           ================================================================ -->
+      <section id="stage-screen" class="screen">
+        <!-- Living Ambient Glows that react to voice -->
+        <div class="stage-ambient" aria-hidden="true">
+          <div class="stage-orb-glow glow-a" id="glow-a"></div>
+          <div class="stage-orb-glow glow-b" id="glow-b"></div>
+        </div>
+
+        <!-- Top Bar: Frosted Back · Dark Status Pill · Frosted Settings -->
+        <header class="stage-topbar">
+          <button id="back-btn" class="stage-circle-btn" aria-label="Вернуться к тексту" type="button">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M15 18l-6-6 6-6"/>
+            </svg>
+          </button>
+
+          <button id="stage-status-pill" class="stage-status-pill" type="button" title="Сменить цвет настроения">
+            <span id="stage-dot" class="status-dot"></span>
+            <span id="stage-status-text">Готов · 1 из 5</span>
+          </button>
+
+          <button id="settings-btn" class="stage-circle-btn" aria-label="Настройки" type="button">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 0 1 0 4h-.09c-.66 0-1.25.4-1.51 1z"/>
+            </svg>
+          </button>
+        </header>
+
+        <!-- Airy Centered Reading Stage (Pure White Active Word, Zero Box) -->
+        <div id="stage-scroll" class="stage-scroll">
+          <article id="stage-text"></article>
+        </div>
+
+        <!-- Living High-Contrast NeuFlx Equalizer Waveform + Dashed Future Line -->
+        <div class="wave-section" id="wave-section">
+          <div class="wave-track" aria-hidden="true">
+            <div class="wave-bars-left" id="wave-bars-left"></div>
+            <div class="wave-playhead">
+              <span class="playhead-dot"></span>
+            </div>
+            <div class="wave-dashed-right"></div>
+          </div>
+          <div class="heard-caption" id="heard-caption">Тапни на купол внизу и просто говори</div>
+        </div>
+
+        <!-- 3 Borderless Frosted Metric Tiles (Light numerals, Spring pop) -->
+        <div class="metrics-grid" id="metrics-grid">
+          <div class="metric-tile" id="tile-wpm">
+            <div class="metric-label">
+              <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              <span>ТЕМП</span>
+            </div>
+            <div class="metric-value"><span id="metric-wpm">0</span> <small>сл/м</small></div>
+          </div>
+          <div class="metric-tile" id="tile-para">
+            <div class="metric-label">
+              <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 6h16M4 12h10M4 18h14"/></svg>
+              <span>АБЗАЦ</span>
+            </div>
+            <div class="metric-value"><span id="metric-para">1</span> <small id="metric-para-total">/ 5</small></div>
+          </div>
+          <div class="metric-tile" id="tile-pct">
+            <div class="metric-label">
+              <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              <span>ПРОГРЕСС</span>
+            </div>
+            <div class="metric-value"><span id="metric-pct">0</span><small>%</small></div>
+          </div>
+        </div>
+
+        <!-- Architectural Rising Halftone Dome ("Tap to Record" from NeuFlx!) -->
+        <footer class="dome-footer">
+          <button id="prev-para-btn" class="dome-side-btn side-left" aria-label="Предыдущий абзац" type="button">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M15 18l-6-6 6-6"/>
+            </svg>
+          </button>
+
+          <button id="voice-orb" class="rising-dome" aria-label="Старт или пауза распознавания" type="button">
+            <span class="dome-surface" aria-hidden="true"></span>
+            <canvas id="dome-canvas" class="dome-canvas" width="320" height="170" aria-hidden="true"></canvas>
+            <span class="dome-label" id="orb-label">Нажми и говори</span>
+          </button>
+
+          <button id="next-para-btn" class="dome-side-btn side-right" aria-label="Следующий абзац" type="button">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 18l6-6-6-6"/>
+            </svg>
+          </button>
+        </footer>
+      </section>
+
+      <!-- ===== SETTINGS BOTTOM SHEET (Inside phone viewport) ===== -->
+      <div id="sheet-backdrop" class="sheet-backdrop"></div>
+      <aside id="settings-sheet" class="sheet" aria-label="Настройки суфлёра">
+        <div class="sheet-handle"></div>
+        <div class="sheet-header">
+          <h2>Настройки</h2>
+          <button id="close-sheet-btn" class="sheet-done-btn" type="button">Готово</button>
+        </div>
+
+        <div class="setting-block">
+          <div class="setting-head">
+            <span>ЦВЕТ НАСТРОЕНИЯ</span>
+            <strong id="mood-name">Мята</strong>
+          </div>
+          <div class="mood-row" id="sheet-mood-row">
+            <button class="mood-chip active" data-mood="sage" type="button"><span style="background:#8EC0A1"></span>Мята</button>
+            <button class="mood-chip" data-mood="orchid" type="button"><span style="background:#E88CC8"></span>Орхидея</button>
+            <button class="mood-chip" data-mood="lime" type="button"><span style="background:#E6EE6C"></span>Лайм</button>
+            <button class="mood-chip" data-mood="night" type="button"><span style="background:#1A2420"></span>Ночь</button>
+          </div>
+        </div>
+
+        <div class="setting-block">
+          <div class="setting-head">
+            <span>РЕЖИМ ВЕДЕНИЯ</span>
+            <strong id="mode-label">Офлайн-голос</strong>
+          </div>
+          <div class="segmented" id="mode-segmented">
+            <button class="seg-btn active" data-mode="vosk" type="button">Офлайн</button>
+            <button class="seg-btn" data-mode="webspeech" type="button">Онлайн</button>
+            <button class="seg-btn" data-mode="autoscroll" type="button">Автоскролл</button>
+          </div>
+        </div>
+
+        <div class="setting-block">
+          <div class="setting-head">
+            <span>РАЗМЕР ШРИФТА</span>
+            <strong id="font-size-val">34 px</strong>
+          </div>
+          <input id="font-size-slider" type="range" min="22" max="58" step="2" value="34" />
+        </div>
+
+        <div class="setting-block" id="speed-row">
+          <div class="setting-head">
+            <span>СКОРОСТЬ АВТОСКРОЛЛА</span>
+            <strong id="speed-val">Средняя</strong>
+          </div>
+          <input id="speed-slider" type="range" min="15" max="110" step="5" value="42" />
+        </div>
+
+        <div class="toggle-grid">
+          <button id="toggle-clean" class="toggle-tile" type="button">
+            <span>Чистый экран</span><span class="tile-dot"></span>
+          </button>
+          <button id="toggle-heard" class="toggle-tile on" type="button">
+            <span>Подсказка внизу</span><span class="tile-dot"></span>
+          </button>
+          <button id="toggle-mirror" class="toggle-tile" type="button">
+            <span>Зеркало</span><span class="tile-dot"></span>
+          </button>
+          <button id="reset-pos-btn" class="toggle-tile" type="button">
+            <span>↺ В начало</span><span class="tile-dot"></span>
+          </button>
+        </div>
+      </aside>
+
+      <div id="toast" class="toast"></div>
+    </div>
+
+    <!-- Decorative iPhone Home Indicator (desktop only) -->
+    <div class="home-indicator" aria-hidden="true"></div>
+  </div>
 
   <script src="./vosk.js"></script>
   <script src="./app.js"></script>

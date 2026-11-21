@@ -1,4 +1,4 @@
-const CACHE_NAME = 'suflyor-ais-v3';
+const CACHE_NAME = 'suflyor-ais-v4';
 const MODEL_CACHE = 'suflyor-ais-model-v2';
 const CORE_ASSETS = [
   './',
@@ -34,7 +34,6 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
 
-  // Heavy speech model: cache-first
   if (url.pathname.includes('/models/')) {
     event.respondWith(
       caches.open(MODEL_CACHE).then((cache) =>
@@ -50,8 +49,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // App shell (HTML/CSS/JS): network-first so updates appear immediately online,
-  // falling back to cache in Airplane Mode
   if (url.origin === self.location.origin) {
     event.respondWith(
       fetch(event.request)
