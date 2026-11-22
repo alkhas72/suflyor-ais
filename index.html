@@ -27,10 +27,10 @@
       <span class="desktop-tag">АИС · Офлайн</span>
     </div>
     <div class="mood-pills" id="desktop-mood-pills" role="group" aria-label="Настроение цвета">
-      <button class="mood-dot active" data-mood="sage" title="Мята" style="--c:#8EC0A1"></button>
-      <button class="mood-dot" data-mood="orchid" title="Орхидея" style="--c:#E88CC8"></button>
-      <button class="mood-dot" data-mood="lime" title="Лайм" style="--c:#E6EE6C"></button>
-      <button class="mood-dot" data-mood="night" title="Тёмная сцена" style="--c:#1A2420"></button>
+      <button class="mood-dot active" data-mood="sage" title="Мята" aria-label="Мята" type="button" style="--c:#8EC0A1"></button>
+      <button class="mood-dot" data-mood="orchid" title="Орхидея" aria-label="Орхидея" type="button" style="--c:#E88CC8"></button>
+      <button class="mood-dot" data-mood="lime" title="Лайм" aria-label="Лайм" type="button" style="--c:#E6EE6C"></button>
+      <button class="mood-dot" data-mood="night" title="Тёмная сцена" aria-label="Тёмная сцена" type="button" style="--c:#1A2420"></button>
     </div>
     <button id="toggle-shell-btn" class="desktop-shell-btn" type="button" title="Рамка телефона / Во весь экран">
       Во весь экран
@@ -73,7 +73,7 @@
 
         <!-- Playful Colored Pill Tabs -->
         <nav class="pill-tabs" aria-label="Инструменты текста">
-          <span class="pill-tab tab-pink active">Текст</span>
+          <span class="pill-tab tab-pink active" aria-current="true">Текст</span>
           <label class="pill-tab tab-dark" style="cursor:pointer">
             Файл .txt
             <input id="file-input" type="file" accept=".txt,.md,text/plain" hidden />
@@ -87,7 +87,7 @@
           <div class="hero-shimmer" aria-hidden="true"></div>
           <div class="hero-card-top">
             <span class="hero-kicker">ОФЛАЙН-ГОЛОС · АВИАРЕЖИМ</span>
-            <span class="hero-status-pill" id="offline-status-pill">Ждёт загрузки</span>
+            <span class="hero-status-pill" id="offline-status-pill" role="status" aria-live="polite">Ждёт загрузки</span>
           </div>
 
           <div class="hero-card-main">
@@ -157,7 +157,7 @@
 
           <button id="stage-status-pill" class="stage-status-pill" type="button" title="Сменить цвет настроения">
             <span id="stage-dot" class="status-dot"></span>
-            <span id="stage-status-text">Готов · 1 из 5</span>
+            <span id="stage-status-text" role="status" aria-live="polite">Готов · 1 из 5</span>
           </button>
 
           <button id="settings-btn" class="stage-circle-btn" aria-label="Настройки" type="button">
@@ -182,7 +182,7 @@
             </div>
             <div class="wave-dashed-right"></div>
           </div>
-          <div class="heard-caption" id="heard-caption">Тапни на купол внизу и просто говори</div>
+          <div class="heard-caption" id="heard-caption" role="status" aria-live="polite">Тапни на купол внизу и просто говори</div>
         </div>
 
         <!-- 3 Borderless Frosted Metric Tiles (Light numerals, Spring pop) -->
